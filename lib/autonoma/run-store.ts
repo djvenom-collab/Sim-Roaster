@@ -36,8 +36,24 @@ export function runSnapshotPath(testRunId: string): string {
   return `sim-roster/autonoma/${safe}/state.json`
 }
 
-// A partial snapshot: every slice is optional, but `version` is always present.
-export type RunSnapshot = Partial<PersistedState> & { version: number }
+/**
+ * A partial snapshot: every slice is optional, but `version` and the
+ * `__autonoma` marker are always present.
+ *
+ * `__autonoma: true` tells the store's load effect to apply these slices
+ * VERBATIM — skipping the normal migration/dedupe/history-backfill pipeline
+ * that would otherwise inject multi-year historical runs and bury the clean
+ * scenario data. `positionQualRules` and `trainingAttachments` are carried as
+ * loose extra keys (the app persists neither in its normal snapshot) so the
+ * verbatim branch can surface them without changing the normal persisted shape.
+ */
+export const AUTONOMA_MARKER = "__autonoma" as const
+export type RunSnapshot = Partial<PersistedState> & {
+  version: number
+  __autonoma: true
+  positionQualRules?: unknown[]
+  trainingAttachments?: unknown[]
+}
 
 // In-process accumulator so the many factory calls inside a single `up` request
 // don't each re-read the blob. Keyed by testRunId. It is only a cache — every
@@ -61,9 +77,11 @@ export async function loadSnapshot(testRunId: string): Promise<RunSnapshot> {
   const cached = cache.get(testRunId)
   if (cached) return cached
   const existing = await readBlob(testRunId)
-  const snap: RunSnapshot = existing ?? { version: SNAPSHOT_VERSION }
-  // Always pin the version so the app never runs a reseed migration over our data.
+  const snap: RunSnapshot = existing ?? { version: SNAPSHOT_VERSION, __autonoma: true }
+  // Always pin the version so the app never runs a reseed migration over our data,
+  // and always stamp the verbatim-apply marker.
   snap.version = SNAPSHOT_VERSION
+  snap.__autonoma = true
   cache.set(testRunId, snap)
   return snap
 }
@@ -82,13 +100,17 @@ type ArraySliceKey = {
   [K in keyof PersistedState]: PersistedState[K] extends Array<infer _> ? K : never
 }[keyof PersistedState]
 
+// The array slices a factory may write to: every array slice of PersistedState
+// plus the two loose passthrough slices the verbatim branch surfaces.
+type WritableSlice = ArraySliceKey | "positionQualRules" | "trainingAttachments"
+
 /**
  * Append a record to an array slice of the run snapshot and flush to blob.
  * Returns the same record for convenience.
  */
 export async function appendToSlice<T extends { id?: string }>(
   testRunId: string,
-  slice: ArraySliceKey,
+  slice: WritableSlice,
   record: T,
 ): Promise<T> {
   const snap = await loadSnapshot(testRunId)
@@ -108,7 +130,7 @@ export async function appendToSlice<T extends { id?: string }>(
  */
 export async function upsertIntoSlice<T extends Record<string, unknown>>(
   testRunId: string,
-  slice: ArraySliceKey,
+  slice: WritableSlice,
   record: T,
   match: (existing: T) => boolean,
 ): Promise<T> {
