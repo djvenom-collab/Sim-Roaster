@@ -458,7 +458,56 @@ export function StoreProvider({
         const json = (await res.json()) as { state: Partial<PersistedState> | null; error?: string }
         if (cancelled) return
         const snap = json?.state
-        if (snap && typeof snap === "object") {
+        if (snap && (snap as { __autonoma?: boolean }).__autonoma === true) {
+          // ── AUTONOMA test-run snapshot ────────────────────────────────────
+          // An isolated per-run snapshot (lib/autonoma/run-store.ts). Apply it
+          // VERBATIM: no dedupe / version-reseed / history-backfill, which would
+          // otherwise inject demo + multi-year data and bury the clean scenario.
+          // Reference/config slices are pre-seeded into the run blob, so "apply
+          // if present, else keep seed default" gives seed + factory additions.
+          // Transactional slices apply if present, else reset EMPTY so a run
+          // shows exactly what its factories seeded (a clean slate).
+          const arr = <T,>(v: unknown): T[] | null => (Array.isArray(v) ? (v as T[]) : null)
+          // reference / config (keep the seed default when absent)
+          if (arr(snap.positions)) setPositionsData(snap.positions!)
+          if (arr(snap.simulators)) setSimulatorsData(snap.simulators!)
+          if (arr(snap.exercises)) setExercisesData(snap.exercises!)
+          if (arr(snap.courses)) setCoursesData(snap.courses!)
+          if (snap.courseSimClass && typeof snap.courseSimClass === "object")
+            setCourseSimClassState(snap.courseSimClass)
+          if (arr(snap.exerciseQualRules)) setExerciseQualRulesData(snap.exerciseQualRules!)
+          if (arr(snap.qualifications)) setQualificationsData(snap.qualifications!)
+          if (arr(snap.slotTimes)) setSlotTimesData(snap.slotTimes!)
+          if (arr(snap.publicHolidays)) setPublicHolidaysData(snap.publicHolidays!)
+          if (arr(snap.trainingGroups)) setTrainingGroupsData(snap.trainingGroups!)
+          if (snap.permissionMatrix && typeof snap.permissionMatrix === "object") {
+            const reconciled = reconcilePermissionMatrix(snap.permissionMatrix)
+            setPermissionMatrixState(reconciled)
+            setPermissionMatrix(reconciled)
+          }
+          // transactional / entity (empty when absent — clean per-run slate)
+          setStaffData(arr<Staff>(snap.staff) ?? [])
+          setUsers(arr<User>(snap.users) ?? [])
+          setAssignmentsData(arr<Assignment>(snap.assignments) ?? [])
+          setStaffQualificationsData(arr<StaffQualification>(snap.staffQualifications) ?? [])
+          setRuns(arr<Run>(snap.runs) ?? [])
+          setRunAssignments(arr<RunAssignment>(snap.runAssignments) ?? [])
+          setLeaveRecords(arr<LeaveRecord>(snap.leaveRecords) ?? [])
+          setOtherTasksData(arr<OtherTask>(snap.otherTasks) ?? [])
+          setTrainingSessions(arr<TrainingSession>(snap.trainingSessions) ?? [])
+          setTrainingAttendance(arr<TrainingAttendance>(snap.trainingAttendance) ?? [])
+          setTrainingLogs(arr<TrainingLogEntry>(snap.trainingLogs) ?? [])
+          setStaffValidity(arr<StaffValidity>(snap.staffValidity) ?? [])
+          setAuditLogs(arr<AuditLog>(snap.auditLogs) ?? [])
+          setImportHistory(arr(snap.importHistory) ?? [])
+          setNotifications(arr<NotificationRecord>(snap.notifications) ?? [])
+          setFaultLogs(arr<FaultLog>(snap.faultLogs) ?? [])
+          setOperatorLogs(arr<OperatorLog>(snap.operatorLogs) ?? [])
+          setFirewallLogs(arr<FirewallLog>(snap.firewallLogs) ?? [])
+          setAdminLogs(arr<AdminLog>(snap.adminLogs) ?? [])
+          if (snap.notifyDirty && typeof snap.notifyDirty === "object") setNotifyDirty(snap.notifyDirty)
+          canSaveRef.current = true
+        } else if (snap && typeof snap === "object") {
           // Apply each slice only if present, so newly-added slices in a later
           // version simply fall back to the seed instead of wiping anything.
           if (Array.isArray(snap.staff) && snap.staff.length) setStaffData(snap.staff)

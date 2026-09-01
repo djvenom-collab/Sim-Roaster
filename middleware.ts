@@ -14,9 +14,10 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on everything except the login page, the auth + seed API routes,
-  // Next internals, and static assets.
+  // Run on everything except the login page, the auth + seed API routes, the
+  // Autonoma test-runner endpoint (HMAC-signed, no app session), Next
+  // internals, and static assets.
   matcher: [
-    "/((?!login|api/auth|api/seed-users|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|glb|gltf|mp3)$).*)",
+    "/((?!login|api/auth|api/seed-users|api/autonoma|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|glb|gltf|mp3)$).*)",
   ],
 }
