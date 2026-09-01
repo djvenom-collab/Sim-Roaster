@@ -11,6 +11,9 @@ importers:
       '@autonoma-ai/sdk':
         specifier: ^0.2.9
         version: 0.2.9(zod@4.5.4)
+      '@autonoma-ai/server-web':
+        specifier: ^0.2.9
+        version: 0.2.9(zod@4.5.4)
       '@base-ui/react':
         specifier: ^1.5.0
         version: 1.5.0(@date-fns/tz@1.4.1)(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -71,6 +74,9 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4.2.0
@@ -107,6 +113,9 @@ packages:
     resolution: {integrity: sha512-GOgbPPpyZYxmuxEO1SCTIORjfjoi7T2V2mDrsh7pVUwUcf7Vtq6dZIK7lAEMPKLyNLIq5uiPkUY3xFQu9NKowQ==}
     peerDependencies:
       zod: ^3.23.0 || ^4.0.0
+
+  '@autonoma-ai/server-web@0.2.9':
+    resolution: {integrity: sha512-YUVcy9ruQjLM1wsWJMVSiTHzsuVWja6oojiVTjiqSDGW0CywCkPtYJ6RWq5Mm6ngTkhMzxm1qrVIk5Uh37juOQ==}
 
   '@babel/code-frame@7.29.7':
     resolution: {integrity: sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw==}
@@ -2633,6 +2642,12 @@ snapshots:
   '@autonoma-ai/sdk@0.2.9(zod@4.5.4)':
     dependencies:
       zod: 4.5.4
+
+  '@autonoma-ai/server-web@0.2.9(zod@4.5.4)':
+    dependencies:
+      '@autonoma-ai/sdk': 0.2.9(zod@4.5.4)
+    transitivePeerDependencies:
+      - zod
 
   '@babel/code-frame@7.29.7':
     dependencies:
