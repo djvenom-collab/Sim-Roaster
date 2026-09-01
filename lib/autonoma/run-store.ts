@@ -166,6 +166,34 @@ export async function upsertIntoSlice<T extends Record<string, unknown>>(
 }
 
 /**
+ * Nest a training attachment under its TrainingSession's `attachments[]` — the
+ * only place the app surfaces attachments (see app/training/page.tsx). Creates a
+ * stub session if the attachment is seeded before its session; the session
+ * factory upserts by id afterwards and the shallow merge preserves this array.
+ */
+export async function attachToSession(
+  testRunId: string,
+  sessionId: string,
+  attachment: Record<string, unknown>,
+): Promise<void> {
+  const snap = await loadSnapshot(testRunId)
+  const sessions = ((snap as Record<string, unknown>).trainingSessions as
+    | Array<Record<string, unknown>>
+    | undefined) ?? []
+  let session = sessions.find((s) => s.id === sessionId)
+  if (!session) {
+    session = { id: sessionId }
+    sessions.push(session)
+  }
+  session.attachments = [
+    ...((session.attachments as unknown[] | undefined) ?? []),
+    attachment,
+  ]
+  ;(snap as Record<string, unknown>).trainingSessions = sessions
+  dirty.add(testRunId)
+}
+
+/**
  * Guarantee a per-run snapshot exists (marked + version-pinned), even when a
  * scenario seeds no domain slices (e.g. a User-only run), so /api/state always
  * serves an ISOLATED verbatim snapshot for the run rather than falling back to

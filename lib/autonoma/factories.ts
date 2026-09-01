@@ -25,7 +25,7 @@
 import { z } from "zod"
 import { defineFactory } from "@autonoma-ai/sdk"
 import type { FactoryRegistry } from "@autonoma-ai/sdk"
-import { appendToSlice } from "./run-store"
+import { appendToSlice, upsertIntoSlice, attachToSession } from "./run-store"
 import { isoDate, isoDateTime } from "./dates"
 import {
   createAuthUser,
@@ -492,6 +492,7 @@ const trainingAttachmentFactory = defineFactory({
   inputSchema: z
     .object({
       id: z.string().optional(),
+      sessionId: z.string().optional(),
       name: z.string(),
       pathname: z.string().optional(),
       url: z.string().optional(),
@@ -511,9 +512,11 @@ const trainingAttachmentFactory = defineFactory({
       size: data.size ?? 0,
       uploadedAt: resolveDateTime(data.uploadedAt, -2),
     }
-    // Attachments are normally nested under a TrainingSession; store them in a
-    // loose passthrough slice so the run snapshot records them even standalone.
-    await appendToSlice(ctx.testRunId, "trainingAttachments", record)
+    // The app only renders attachments nested under a TrainingSession
+    // (session.attachments[] — app/training/page.tsx), so nest it there. If no
+    // sessionId is given, fall back to the loose slice for the ref graph.
+    if (data.sessionId) await attachToSession(ctx.testRunId, data.sessionId, record)
+    else await appendToSlice(ctx.testRunId, "trainingAttachments", record)
     return record
   },
 })
@@ -545,7 +548,15 @@ const trainingSessionFactory = defineFactory({
       ...(data.positionIds ? { positionIds: data.positionIds } : {}),
       status: data.status ?? "scheduled",
     }
-    await appendToSlice(ctx.testRunId, "trainingSessions", record)
+    // Upsert (not append) so a stub session created by an earlier attachment is
+    // merged into rather than duplicated; the shallow merge keeps its
+    // attachments[] since `record` carries no attachments key.
+    await upsertIntoSlice(
+      ctx.testRunId,
+      "trainingSessions",
+      record,
+      (s) => s.id === id,
+    )
     return record
   },
 })

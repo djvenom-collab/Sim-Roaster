@@ -135,8 +135,8 @@
           { "id": "lv-3", "staffId": "staff-3-{{testRunShortId}}", "type": "Training", "startDate": 3, "endDate": 4, "approval": "pending", "fullDay": true }
         ],
         "TrainingAttachment": [
-          { "id": "att-1", "name": "syllabus.pdf", "pathname": "training/syllabus-{{testRunShortId}}.pdf", "url": "https://blob/syllabus.pdf", "contentType": "application/pdf", "size": 102400, "uploadedAt": -2 },
-          { "id": "att-2", "name": "manual.pdf", "pathname": "training/manual-{{testRunShortId}}.pdf", "url": "https://blob/manual.pdf", "contentType": "application/pdf", "size": 204800, "uploadedAt": -2 }
+          { "id": "att-1", "sessionId": "ts-1", "name": "syllabus.pdf", "pathname": "training/syllabus-{{testRunShortId}}.pdf", "url": "https://blob/syllabus.pdf", "contentType": "application/pdf", "size": 102400, "uploadedAt": -2 },
+          { "id": "att-2", "sessionId": "ts-2", "name": "manual.pdf", "pathname": "training/manual-{{testRunShortId}}.pdf", "url": "https://blob/manual.pdf", "contentType": "application/pdf", "size": 204800, "uploadedAt": -2 }
         ],
         "TrainingSession": [
           { "id": "ts-1", "title": "LVO Refresher", "type": "Theory", "date": 2, "slotTime": "09:00", "instructorId": "staff-3-{{testRunShortId}}", "status": "scheduled" },
