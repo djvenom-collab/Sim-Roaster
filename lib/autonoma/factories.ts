@@ -82,12 +82,26 @@ const userFactory = defineFactory({
       createdAt: dateInput.optional(),
     })
     .passthrough(),
-  async create(data) {
-    // Real signed-up user (hashed password + account row) tagged with appRole.
+  async create(data, ctx) {
+    const appRole = data.appRole ?? "SP"
+    // Real signed-up user (hashed password + account row) tagged with appRole —
+    // this is what the runner logs in as (Better Auth session → role bridge in
+    // app/layout.tsx).
     const created = await createAuthUser({
       email: data.email,
       name: data.name,
-      appRole: data.appRole ?? "SP",
+      appRole,
+    })
+    // ALSO mirror into the app's in-app `users` slice (lib/types.ts User) so the
+    // Admin ▸ Users & roles panel (app/admin/page.tsx reads store.users) shows
+    // the seeded users. Same Better Auth id keeps the two representations linked.
+    await appendToSlice(ctx.testRunId, "users", {
+      id: created.id,
+      name: created.name,
+      email: created.email,
+      role: appRole,
+      active: true,
+      lastLogin: resolveDate(data.createdAt, -1),
     })
     // Return the REAL Better Auth id so Session/Account `_ref` links resolve to
     // a valid FK, plus the fields the auth callback needs to sign in.
