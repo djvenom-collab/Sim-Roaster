@@ -60,10 +60,14 @@ export type RunSnapshot = Partial<PersistedState> & {
 }
 
 // In-process accumulator so the many factory calls inside a single `up` request
-// don't each re-read the blob. Keyed by testRunId. It is only a cache — every
-// mutation is flushed to the blob immediately, so a cold process recovers by
-// reading the existing per-run blob back in (see loadSnapshot).
+// don't each re-read OR re-write the blob. A single `up` runs all its factory
+// creates + the afterUp hook in ONE request/process, so mutations are buffered
+// here and written to the blob exactly once via flushRun() from afterUp —
+// turning ~120 sequential blob round-trips into one. Keyed by testRunId; a cold
+// process recovers by reading the existing per-run blob back in (loadSnapshot).
 const cache = new Map<string, RunSnapshot>()
+// testRunIds whose in-memory snapshot has unflushed mutations.
+const dirty = new Set<string>()
 
 async function readBlob(testRunId: string): Promise<RunSnapshot | null> {
   try {
@@ -93,14 +97,24 @@ export async function loadSnapshot(testRunId: string): Promise<RunSnapshot> {
   return snap
 }
 
-async function flush(testRunId: string, snap: RunSnapshot): Promise<void> {
-  cache.set(testRunId, snap)
+/**
+ * Persist a run's buffered snapshot to its blob if it has pending mutations.
+ * Idempotent and a no-op when nothing changed. Call once per `up` (afterUp).
+ */
+export async function flushRun(testRunId: string): Promise<void> {
+  if (!dirty.has(testRunId)) return
+  const snap = cache.get(testRunId)
+  if (!snap) {
+    dirty.delete(testRunId)
+    return
+  }
   await put(runSnapshotPath(testRunId), JSON.stringify(snap), {
     access: "private",
     allowOverwrite: true,
     contentType: "application/json",
     cacheControlMaxAge: 0,
   })
+  dirty.delete(testRunId)
 }
 
 type ArraySliceKey = {
@@ -124,7 +138,7 @@ export async function appendToSlice<T extends Record<string, unknown>>(
   const arr = ((snap as Record<string, unknown>)[slice] as T[] | undefined) ?? []
   arr.push(record)
   ;(snap as Record<string, unknown>)[slice] = arr
-  await flush(testRunId, snap)
+  dirty.add(testRunId)
   return record
 }
 
@@ -147,24 +161,25 @@ export async function upsertIntoSlice<T extends Record<string, unknown>>(
   if (idx >= 0) arr[idx] = { ...arr[idx], ...record }
   else arr.push(record)
   ;(snap as Record<string, unknown>)[slice] = arr
-  await flush(testRunId, snap)
+  dirty.add(testRunId)
   return record
 }
 
 /**
- * Guarantee a per-run blob exists (marked + version-pinned), even when a
- * scenario seeds no domain slices (e.g. a User-only run). Called once from the
- * auth callback so /api/state always serves an ISOLATED verbatim snapshot for
- * the run rather than falling back to the global demo data.
+ * Guarantee a per-run snapshot exists (marked + version-pinned), even when a
+ * scenario seeds no domain slices (e.g. a User-only run), so /api/state always
+ * serves an ISOLATED verbatim snapshot for the run rather than falling back to
+ * the global demo data. Marks the run dirty so flushRun (afterUp) writes it.
  */
 export async function ensureSnapshot(testRunId: string): Promise<void> {
-  const snap = await loadSnapshot(testRunId)
-  await flush(testRunId, snap)
+  await loadSnapshot(testRunId)
+  dirty.add(testRunId)
 }
 
 /** Scope-root teardown: delete a run's entire snapshot in one call. Idempotent. */
 export async function deleteRunSnapshot(testRunId: string): Promise<void> {
   cache.delete(testRunId)
+  dirty.delete(testRunId)
   try {
     await del(runSnapshotPath(testRunId))
   } catch {

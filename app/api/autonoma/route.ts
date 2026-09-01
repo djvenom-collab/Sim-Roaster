@@ -24,6 +24,7 @@ import { sessionCookiesFor } from "@/lib/autonoma/auth"
 import {
   RUN_COOKIE,
   ensureSnapshot,
+  flushRun,
   deleteRunSnapshot,
 } from "@/lib/autonoma/run-store"
 
@@ -78,6 +79,16 @@ const handler = createHandler({
       cookies: [...sessionCookies, runCookie],
       credentials: { email: String(user.email), ...(password ? { password } : {}) },
     }
+  },
+
+  /**
+   * Runs after all creates + auth, before the response. Every factory buffered
+   * its writes in-process (lib/autonoma/run-store.ts); this flushes the run's
+   * whole snapshot to its blob in ONE write instead of one-per-record.
+   */
+  async afterUp(context, authResult) {
+    if (context.scenarioName) await flushRun(context.scenarioName)
+    return authResult
   },
 
   /**
