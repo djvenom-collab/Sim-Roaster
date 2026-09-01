@@ -144,6 +144,17 @@ export async function upsertIntoSlice<T extends Record<string, unknown>>(
   return record
 }
 
+/**
+ * Guarantee a per-run blob exists (marked + version-pinned), even when a
+ * scenario seeds no domain slices (e.g. a User-only run). Called once from the
+ * auth callback so /api/state always serves an ISOLATED verbatim snapshot for
+ * the run rather than falling back to the global demo data.
+ */
+export async function ensureSnapshot(testRunId: string): Promise<void> {
+  const snap = await loadSnapshot(testRunId)
+  await flush(testRunId, snap)
+}
+
 /** Scope-root teardown: delete a run's entire snapshot in one call. Idempotent. */
 export async function deleteRunSnapshot(testRunId: string): Promise<void> {
   cache.delete(testRunId)
