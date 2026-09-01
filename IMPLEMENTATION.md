@@ -56,14 +56,25 @@ Recipe: `/home/vercel-sandbox/.autonoma/v0-project/recipe.json` (scenario: `stan
 - [x] `AUTONOMA_SIGNING_SECRET` provisioned (Production/Preview/Development) + `.env`
 
 ## Validation
-- [ ] Every entity seeded + verified independently (up → inspect → down → inspect)
-- [ ] Full-recipe `sdk up` → all rows present → `sdk down` → rows gone
-- [ ] Wrong-signature rejected (SDK-enforced)
-- [ ] Auth payload carries real credentials (not a placeholder)
-- [ ] Time-sensitive rows land on the intended side of `now`
-- [ ] `sdk check` on `recipe.json` prints `"ok": true`
-- [ ] Concurrent-instances proof (`sdk up --repeat 3`) passes
-- [ ] Branch pushed + pull request opened
+- [x] Full-recipe `sdk up` → all 33 models / 118 records present in `/api/state`
+      (staff 5, runs 5, users 3, leave 3, training 2, logs, …) → `sdk down` → gone
+- [x] Per-run isolation verified: two parallel runs (`conc-x`/`conc-y`) each serve
+      only their own data + their own tokenised users
+- [x] Wrong-signature rejected — unsigned `POST /api/autonoma` returns 401
+- [x] Auth payload carries real credentials (real Better Auth login; browser
+      login as the seeded Admin renders the seeded dashboard)
+- [x] Time-sensitive rows land on the intended side of `now` (relative offsets
+      resolved in `lib/autonoma/dates.ts`)
+- [x] `sdk check` on `recipe.json` prints `"ok": true` (0 problems)
+- [x] Concurrent-instances proof (`sdk up --repeat 3`) → `ok: true`, all 3 up,
+      teardown complete (0 test users left; 6 real users preserved)
+- [x] Production `next build` passes with `/api/autonoma` compiled
+- [x] Branch pushed + pull request opened
+
+## Browser-verified
+Logged in as the seeded Admin with the `autonoma_run` cookie: Admin ▸ Users shows
+the 3 seeded users; the dashboard shows the seeded runs (RAD01 3/3 Confirmed,
+TWR01 1/2 Tentative) and On-Leave-Today 1 — all from the isolated per-run blob.
 
 ## Concurrency design
 - Blob domain data is isolated per run by the `testRunId` blob path, so hardcoded
