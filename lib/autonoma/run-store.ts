@@ -13,11 +13,13 @@
  *     sim-roster/autonoma/<testRunId>/state.json
  *
  * The app serves that per-run snapshot instead of the global one whenever the
- * request carries the `autonoma_run` cookie (set by the auth callback). The
- * store's own mergeWithSeed fills any slice we did not seed from the sample
- * data, so a partial snapshot is enough — we only write the slices a scenario
- * touches. `version` is pinned to SNAPSHOT_VERSION so the store's migration
- * logic never reseeds (and thus never overwrites) our seeded schedule slices.
+ * request carries the `autonoma_run` cookie (set by the auth callback). Each run
+ * blob is initialised from the app's REFERENCE/CONFIG data (see
+ * buildReferenceSnapshot) with empty transactional slices, then factories append
+ * their seeded records. The store applies the snapshot VERBATIM (the `__autonoma`
+ * marker), so what a run shows is exactly reference-data + what its factories
+ * seeded — a clean, isolated slate. `version` is pinned to SNAPSHOT_VERSION so
+ * the store's migration/backfill logic never reseeds over our data.
  *
  * Teardown is scope-root: deleting the single per-run blob removes everything a
  * run created in one call (see deleteRunSnapshot / beforeDown in the handler).
@@ -25,6 +27,37 @@
 import { put, get, del } from "@vercel/blob"
 import type { PersistedState } from "@/lib/persisted-state"
 import { SNAPSHOT_VERSION } from "@/lib/persisted-state"
+import * as seed from "@/lib/sample-data"
+
+/**
+ * The app's REFERENCE/CONFIG data — the slices that describe the fixed world a
+ * scenario operates in (positions, simulators, exercises, courses, the SIM
+ * bucket map, qual rules, the qualification catalogue, slot times, holidays and
+ * OJTI pools). Every per-run blob is initialised with a copy of these so:
+ *   - the app renders (schedules need positions, exercises, slot times, …), and
+ *   - master-data factories (Position/Simulator/Exercise/…) APPEND to the seed
+ *     set rather than replacing it, keeping all cross-references intact.
+ *
+ * Crucially, reference data only ever references OTHER reference data, while
+ * transactional data references reference data — so seeding reference slices and
+ * leaving transactional slices EMPTY yields a clean, fully-consistent slate with
+ * no dangling references. Transactional slices (staff, runs, leave, training,
+ * logs, …) are intentionally omitted here and filled only by factories.
+ */
+function buildReferenceSnapshot(): Partial<PersistedState> {
+  return {
+    positions: structuredClone(seed.positions),
+    simulators: structuredClone(seed.simulators),
+    exercises: structuredClone(seed.exercises),
+    courses: structuredClone(seed.courses),
+    courseSimClass: structuredClone(seed.courseSimClass),
+    exerciseQualRules: structuredClone(seed.exerciseQualRules),
+    qualifications: structuredClone(seed.qualifications),
+    slotTimes: structuredClone(seed.slotTimes),
+    publicHolidays: structuredClone(seed.publicHolidays),
+    trainingGroups: structuredClone(seed.trainingGroups),
+  }
+}
 
 /** Cookie name the app reads to switch /api/state onto the per-run snapshot. */
 export const RUN_COOKIE = "autonoma_run"
@@ -77,7 +110,10 @@ export async function loadSnapshot(testRunId: string): Promise<RunSnapshot> {
   const cached = cache.get(testRunId)
   if (cached) return cached
   const existing = await readBlob(testRunId)
-  const snap: RunSnapshot = existing ?? { version: SNAPSHOT_VERSION, __autonoma: true }
+  // A brand-new run starts from the reference/config world with EMPTY
+  // transactional slices; an existing run resumes exactly where it left off.
+  const snap: RunSnapshot =
+    existing ?? { version: SNAPSHOT_VERSION, __autonoma: true, ...buildReferenceSnapshot() }
   // Always pin the version so the app never runs a reseed migration over our data,
   // and always stamp the verbatim-apply marker.
   snap.version = SNAPSHOT_VERSION
@@ -108,7 +144,7 @@ type WritableSlice = ArraySliceKey | "positionQualRules" | "trainingAttachments"
  * Append a record to an array slice of the run snapshot and flush to blob.
  * Returns the same record for convenience.
  */
-export async function appendToSlice<T extends { id?: string }>(
+export async function appendToSlice<T extends Record<string, unknown>>(
   testRunId: string,
   slice: WritableSlice,
   record: T,
