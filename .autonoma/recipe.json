@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "source": { "discoverPath": "discover.json", "scenariosPath": "scenarios.md" },
+  "validationMode": "endpoint-lifecycle",
+  "recipes": [
+    {
+      "name": "standard",
+      "description": "Realistic working state: diverse staff, simulator runs, training, quals, and audit/ops logs.",
+      "create": {
+        "User": [
+          { "_alias": "user_admin", "name": "Admin User", "email": "admin+{{testRunId}}@simroster.test", "appRole": "Admin", "createdAt": -30 },
+          { "_alias": "user_sup", "name": "Sarah Supervisor", "email": "sarah+{{testRunId}}@simroster.test", "appRole": "SUP", "createdAt": -14 },
+          { "_alias": "user_staff", "name": "John Staff", "email": "john+{{testRunId}}@simroster.test", "appRole": "SP", "createdAt": -7 }
+        ],
+        "Session": [
+          { "_alias": "sess_admin", "userId": { "_ref": "user_admin" }, "token": "tok-{{testRunShortId}}-123", "expiresAt": 1 }
+        ],
+        "Account": [
+          { "_alias": "acc_admin", "userId": { "_ref": "user_admin" }, "accountId": "ext-{{testRunShortId}}", "providerId": "google", "provider": "google" }
+        ],
+        "Verification": [
+          { "_alias": "ver_admin", "identifier": "admin+{{testRunId}}@simroster.test", "value": "123456" }
+        ],
+        "Simulator": [
+          { "id": "sim-radar-1", "code": "TS1", "name": "Radar Simulator 1", "program": "RADAR", "active": true },
+          { "id": "sim-tower-1", "code": "TWR1", "name": "Tower Simulator 1", "program": "TOWER", "active": true }
+        ],
+        "Position": [
+          { "id": "pos-arr", "code": "ARR", "name": "Arrival", "program": "RADAR", "validityDays": 90, "active": true },
+          { "id": "pos-dir", "code": "DIR", "name": "Director", "program": "RADAR", "validityDays": 90, "active": true },
+          { "id": "pos-dsr", "code": "DSR", "name": "Departures", "program": "RADAR", "validityDays": 90, "active": true },
+          { "id": "pos-amr", "code": "AMR", "name": "En-route", "program": "RADAR", "validityDays": 180, "active": true },
+          { "id": "pos-gmp", "code": "GMP", "name": "Ground Management", "program": "TOWER", "validityDays": 90, "active": true },
+          { "id": "pos-air", "code": "AIR", "name": "Air Control", "program": "TOWER", "validityDays": 90, "active": true },
+          { "id": "pos-gmc1", "code": "GMC1", "name": "Ground Movement 1", "program": "TOWER", "validityDays": 90, "active": true },
+          { "id": "pos-cod", "code": "COD", "name": "Coordinator", "program": "RADAR", "validityDays": 365, "active": true }
+        ],
+        "Qualification": [
+          { "id": "qual-ojti", "code": "OJTI", "name": "On-the-Job Training Instructor", "effect": "allow", "description": "Can instruct trainees" },
+          { "id": "qual-lvo", "code": "LVO", "name": "Low Visibility Ops", "effect": "allow", "description": "Certified for LVO runs" },
+          { "id": "qual-med", "code": "MED", "name": "Medical Restriction", "effect": "restrict", "description": "Cannot work solo positions" },
+          { "id": "qual-check", "code": "CHK", "name": "Check Controller", "effect": "allow", "description": "Authorized to perform checks" }
+        ],
+        "Exercise": [
+          { "id": "ex-r-1", "code": "RAD01", "name": "Basic Radar Vectoring", "program": "RADAR", "simulatorId": "sim-radar-1", "requiredPositions": ["pos-arr", "pos-dir"], "active": true },
+          { "id": "ex-r-2", "code": "RAD02", "name": "Complex Departures", "program": "RADAR", "simulatorId": "sim-radar-1", "requiredPositions": ["pos-dsr", "pos-cod"], "active": true },
+          { "id": "ex-t-1", "code": "TWR01", "name": "Standard Aerodrome", "program": "TOWER", "simulatorId": "sim-tower-1", "requiredPositions": ["pos-gmp", "pos-air"], "active": true },
+          { "id": "ex-t-2", "code": "TWR02", "name": "Heavy Traffic TWR", "program": "TOWER", "simulatorId": "sim-tower-1", "requiredPositions": ["pos-gmc1", "pos-air"], "active": true }
+        ],
+        "Course": [
+          { "id": "crs-1", "code": "R-BASIC", "name": "Basic Radar Course", "program": "RADAR", "kind": "exercise", "exerciseIds": ["ex-r-1", "ex-r-2"], "startDate": -7, "endDate": 21, "active": true },
+          { "id": "crs-2", "code": "T-ADV", "name": "Advanced Tower", "program": "TOWER", "kind": "exercise", "exerciseIds": ["ex-t-1", "ex-t-2"], "startDate": -2, "endDate": 10, "active": true }
+        ],
+        "PositionQualRule": [
+          { "id": "pqr-1", "positionId": "pos-arr", "requiredQuals": [], "preferredQuals": ["qual-lvo"], "excludedQuals": [], "allowManualOverride": true },
+          { "id": "pqr-2", "positionId": "pos-dir", "requiredQuals": [], "preferredQuals": ["qual-lvo"], "excludedQuals": [], "allowManualOverride": true },
+          { "id": "pqr-3", "positionId": "pos-amr", "requiredQuals": [], "preferredQuals": [], "excludedQuals": ["qual-med"], "allowManualOverride": false },
+          { "id": "pqr-4", "positionId": "pos-gmp", "requiredQuals": [], "preferredQuals": ["qual-ojti"], "excludedQuals": [], "allowManualOverride": true }
+        ],
+        "ExerciseQualRule": [
+          { "id": "eqr-1", "exerciseId": "ex-r-1", "requiredQuals": [], "preferredQuals": ["qual-lvo"], "excludedQuals": [] },
+          { "id": "eqr-2", "exerciseId": "ex-t-2", "requiredQuals": [], "preferredQuals": ["qual-ojti"], "excludedQuals": [] }
+        ],
+        "SlotTime": [
+          { "id": "slot-m", "label": "Morning", "startTime": "08:00", "endTime": "12:00" },
+          { "id": "slot-a", "label": "Afternoon", "startTime": "13:00", "endTime": "17:00" },
+          { "id": "slot-n", "label": "Night", "startTime": "20:00", "endTime": "00:00" }
+        ],
+        "PublicHoliday": [
+          { "id": "ph-1", "date": "2026-12-25", "name": "Christmas Day" },
+          { "id": "ph-2", "date": "2027-01-01", "name": "New Year's Day" }
+        ],
+        "TrainingGroup": [
+          { "id": "radar-p1", "label": "Pool 1", "program": "RADAR", "positionIds": ["pos-arr", "pos-dir"] },
+          { "id": "radar-p2", "label": "Pool 2", "program": "RADAR", "positionIds": ["pos-amr", "pos-dsr"] },
+          { "id": "radar-p3", "label": "Pool 3", "program": "RADAR", "positionIds": ["pos-cod"] },
+          { "id": "radar-p4", "label": "Pool 4", "program": "RADAR", "positionIds": ["pos-dir"] },
+          { "id": "tower-p1", "label": "Pool 1", "program": "TOWER", "positionIds": ["pos-gmp"] },
+          { "id": "tower-p2", "label": "Pool 2", "program": "TOWER", "positionIds": ["pos-air"] },
+          { "id": "tower-p3", "label": "Pool 3", "program": "TOWER", "positionIds": ["pos-gmc1"] },
+          { "id": "tower-p4", "label": "Pool 4", "program": "TOWER", "positionIds": ["pos-gmp"] }
+        ],
+        "Assignment": [
+          { "id": "asg-l", "code": "L", "description": "Annual Leave", "group": "Leave", "type": "Leave", "appliesTo": "RADAR / TOWER", "sortOrder": 1, "active": true },
+          { "id": "asg-tr", "code": "TR", "description": "Training", "group": "Training", "type": "Training", "appliesTo": "RADAR / TOWER", "sortOrder": 2, "active": true },
+          { "id": "asg-ojti", "code": "OJTI", "description": "Instruction", "group": "Roster", "type": "Instructor", "appliesTo": "RADAR / TOWER", "sortOrder": 3, "active": true },
+          { "id": "asg-s", "code": "S", "description": "Sick Leave", "group": "Sick Leave", "type": "Leave", "appliesTo": "RADAR / TOWER", "sortOrder": 4, "active": true }
+        ],
+        "Staff": [
+          { "id": "staff-1-{{testRunShortId}}", "initials": "JM", "firstName": "James", "lastName": "Miller", "email": "miller+{{testRunId}}@simroster.test", "homePositions": ["pos-arr", "pos-dir"], "programs": ["RADAR"], "active": true, "rank": "Senior" },
+          { "id": "staff-2-{{testRunShortId}}", "initials": "SC", "firstName": "Sarah", "lastName": "Connor", "email": "connor+{{testRunId}}@simroster.test", "homePositions": ["pos-gmp", "pos-air"], "programs": ["TOWER"], "active": true, "rank": "Controller" },
+          { "id": "staff-3-{{testRunShortId}}", "initials": "RB", "firstName": "Robert", "lastName": "Brown", "email": "brown+{{testRunId}}@simroster.test", "homePositions": ["pos-dsr", "pos-amr"], "programs": ["RADAR"], "active": true, "rank": "OJTI" },
+          { "id": "staff-4-{{testRunShortId}}", "initials": "EW", "firstName": "Emma", "lastName": "White", "email": "white+{{testRunId}}@simroster.test", "homePositions": ["pos-gmc1", "pos-air"], "programs": ["TOWER"], "active": true, "rank": "Trainee" },
+          { "id": "staff-5-{{testRunShortId}}", "initials": "DS", "firstName": "David", "lastName": "Smith", "email": "smith+{{testRunId}}@simroster.test", "homePositions": ["pos-cod"], "programs": ["RADAR"], "active": true, "rank": "Controller" }
+        ],
+        "StaffQualification": [
+          { "id": "sq-1", "staffId": "staff-3-{{testRunShortId}}", "qualificationId": "qual-ojti" },
+          { "id": "sq-2", "staffId": "staff-1-{{testRunShortId}}", "qualificationId": "qual-lvo" },
+          { "id": "sq-3", "staffId": "staff-5-{{testRunShortId}}", "qualificationId": "qual-med", "expiry": 180 },
+          { "id": "sq-4", "staffId": "staff-3-{{testRunShortId}}", "qualificationId": "qual-check" },
+          { "id": "sq-5", "staffId": "staff-2-{{testRunShortId}}", "qualificationId": "qual-ojti" }
+        ],
+        "StaffValidity": [
+          { "staffId": "staff-1-{{testRunShortId}}", "positionId": "pos-arr", "lastDateSat": -2, "validityDays": 90 },
+          { "staffId": "staff-1-{{testRunShortId}}", "positionId": "pos-dir", "lastDateSat": -30, "validityDays": 90 },
+          { "staffId": "staff-3-{{testRunShortId}}", "positionId": "pos-dir", "lastDateSat": -2, "validityDays": 90 },
+          { "staffId": "staff-3-{{testRunShortId}}", "positionId": "pos-dsr", "lastDateSat": -60, "validityDays": 90 },
+          { "staffId": "staff-2-{{testRunShortId}}", "positionId": "pos-gmp", "lastDateSat": -5, "validityDays": 90 },
+          { "staffId": "staff-2-{{testRunShortId}}", "positionId": "pos-air", "lastDateSat": null, "validityDays": 90 },
+          { "staffId": "staff-5-{{testRunShortId}}", "positionId": "pos-dsr", "lastDateSat": -10, "validityDays": 90 },
+          { "staffId": "staff-5-{{testRunShortId}}", "positionId": "pos-cod", "lastDateSat": -90, "validityDays": 365 }
+        ],
+        "Run": [
+          { "id": "run-1", "date": 0, "slotTime": "08:00", "simulatorId": "sim-radar-1", "exerciseId": "ex-r-1", "status": "confirmed", "requiredPositions": ["pos-arr", "pos-dir"] },
+          { "id": "run-2", "date": 0, "slotTime": "13:00", "simulatorId": "sim-tower-1", "exerciseId": "ex-t-1", "status": "tentative", "requiredPositions": ["pos-gmp", "pos-air"] },
+          { "id": "run-3", "date": 1, "slotTime": "08:00", "simulatorId": "sim-radar-1", "exerciseId": "ex-r-2", "status": "tentative", "requiredPositions": ["pos-dsr", "pos-cod"] },
+          { "id": "run-4", "date": -2, "slotTime": "08:00", "simulatorId": "sim-radar-1", "exerciseId": "ex-r-1", "status": "completed", "requiredPositions": ["pos-arr", "pos-dir"] },
+          { "id": "run-5", "date": -1, "slotTime": "13:00", "simulatorId": "sim-tower-1", "exerciseId": "ex-t-2", "status": "cancelled", "requiredPositions": ["pos-gmc1", "pos-air"] }
+        ],
+        "RunAssignment": [
+          { "id": "ra-1", "runId": "run-1", "positionId": "pos-arr", "staffId": "staff-1-{{testRunShortId}}", "manualOverride": false, "trainingMode": false },
+          { "id": "ra-2", "runId": "run-1", "positionId": "pos-dir", "staffId": "staff-3-{{testRunShortId}}", "manualOverride": false, "trainingMode": false },
+          { "id": "ra-3", "runId": "run-2", "positionId": "pos-gmp", "staffId": "staff-2-{{testRunShortId}}", "manualOverride": false, "trainingMode": false },
+          { "id": "ra-4", "runId": "run-2", "positionId": "pos-air", "staffId": null, "manualOverride": false, "trainingMode": false },
+          { "id": "ra-5", "runId": "run-3", "positionId": "pos-dsr", "staffId": "staff-5-{{testRunShortId}}", "manualOverride": false, "trainingMode": false },
+          { "id": "ra-6", "runId": "run-3", "positionId": "pos-cod", "staffId": null, "manualOverride": false, "trainingMode": false },
+          { "id": "ra-7", "runId": "run-4", "positionId": "pos-arr", "staffId": "staff-1-{{testRunShortId}}", "manualOverride": false, "trainingMode": false },
+          { "id": "ra-8", "runId": "run-4", "positionId": "pos-dir", "staffId": "staff-3-{{testRunShortId}}", "manualOverride": false, "trainingMode": false },
+          { "id": "ra-9", "runId": "run-1", "positionId": "flex-1", "staffId": "staff-4-{{testRunShortId}}", "manualOverride": true, "trainingMode": true, "linkedPositionId": "pos-arr" },
+          { "id": "ra-10", "runId": "run-5", "positionId": "pos-gmc1", "staffId": null, "manualOverride": false, "trainingMode": false }
+        ],
+        "LeaveRecord": [
+          { "id": "lv-1", "staffId": "staff-1-{{testRunShortId}}", "type": "Annual", "startDate": 5, "endDate": 12, "approval": "approved", "fullDay": true },
+          { "id": "lv-2", "staffId": "staff-2-{{testRunShortId}}", "type": "Sick", "startDate": 0, "endDate": 0, "approval": "approved", "fullDay": true },
+          { "id": "lv-3", "staffId": "staff-3-{{testRunShortId}}", "type": "Training", "startDate": 3, "endDate": 4, "approval": "pending", "fullDay": true }
+        ],
+        "TrainingAttachment": [
+          { "id": "att-1", "name": "syllabus.pdf", "pathname": "training/syllabus-{{testRunShortId}}.pdf", "url": "https://blob/syllabus.pdf", "contentType": "application/pdf", "size": 102400, "uploadedAt": -2 },
+          { "id": "att-2", "name": "manual.pdf", "pathname": "training/manual-{{testRunShortId}}.pdf", "url": "https://blob/manual.pdf", "contentType": "application/pdf", "size": 204800, "uploadedAt": -2 }
+        ],
+        "TrainingSession": [
+          { "id": "ts-1", "title": "LVO Refresher", "type": "Theory", "date": 2, "slotTime": "09:00", "instructorId": "staff-3-{{testRunShortId}}", "status": "scheduled" },
+          { "id": "ts-2", "title": "Emergency Procedures", "type": "Simulator", "date": -1, "slotTime": "14:00", "instructorId": "staff-1-{{testRunShortId}}", "status": "completed" }
+        ],
+        "TrainingAttendance": [
+          { "id": "ta-1", "sessionId": "ts-1", "staffId": "staff-1-{{testRunShortId}}", "attended": false },
+          { "id": "ta-2", "sessionId": "ts-1", "staffId": "staff-5-{{testRunShortId}}", "attended": false },
+          { "id": "ta-3", "sessionId": "ts-2", "staffId": "staff-2-{{testRunShortId}}", "attended": true },
+          { "id": "ta-4", "sessionId": "ts-2", "staffId": "staff-4-{{testRunShortId}}", "attended": true },
+          { "id": "ta-5", "sessionId": "ts-2", "staffId": "staff-5-{{testRunShortId}}", "attended": true },
+          { "id": "ta-6", "sessionId": "ts-1", "staffId": "staff-4-{{testRunShortId}}", "attended": false }
+        ],
+        "TrainingLogEntry": [
+          { "id": "tl-1", "date": -1, "program": "RADAR", "groupId": "radar-p1", "ojtiId": "staff-3-{{testRunShortId}}", "traineeId": "staff-4-{{testRunShortId}}", "hours": 3, "rating": 4 },
+          { "id": "tl-2", "date": -2, "program": "TOWER", "groupId": "tower-p1", "ojtiId": "staff-2-{{testRunShortId}}", "traineeId": "staff-4-{{testRunShortId}}", "hours": 2, "rating": 3 },
+          { "id": "tl-3", "date": -3, "program": "RADAR", "groupId": "radar-p1", "ojtiId": "staff-3-{{testRunShortId}}", "traineeId": "staff-4-{{testRunShortId}}", "hours": 4, "rating": 5 },
+          { "id": "tl-4", "date": 0, "program": "TOWER", "groupId": "tower-p2", "ojtiId": "staff-2-{{testRunShortId}}", "traineeId": "staff-4-{{testRunShortId}}", "hours": 1, "rating": 4 }
+        ],
+        "OtherTask": [
+          { "id": "ot-1", "title": "Safety Committee Meeting", "staffIds": ["staff-1-{{testRunShortId}}", "staff-3-{{testRunShortId}}"], "startDate": 0, "endDate": 0, "program": "RADAR" },
+          { "id": "ot-2", "title": "System Upgrade Testing", "staffIds": ["staff-2-{{testRunShortId}}"], "startDate": 1, "endDate": 2, "program": "TOWER" }
+        ],
+        "AuditLog": [
+          { "id": "al-1", "timestamp": -1, "user": "Admin User", "action": "run.create", "detail": "Created RUN-1" },
+          { "id": "al-2", "timestamp": -1, "user": "Admin User", "action": "exercise.confirm", "detail": "Confirmed RUN-1" },
+          { "id": "al-3", "timestamp": 0, "user": "Sarah Supervisor", "action": "assignment.change", "detail": "Assigned James Miller to ARR on RUN-1" },
+          { "id": "al-4", "timestamp": -2, "user": "Admin User", "action": "staff.create", "detail": "Added staff Emma White" },
+          { "id": "al-5", "timestamp": -7, "user": "Admin User", "action": "excel.import", "detail": "Imported 50 staff records" }
+        ],
+        "FaultLog": [
+          { "id": "fl-1", "timestamp": -2, "severity": "major", "status": "resolved", "system": "TS1 Motion Platform", "description": "Hydraulic leak detected", "reportedBy": "JM" },
+          { "id": "fl-2", "timestamp": 0, "severity": "minor", "status": "open", "system": "Instructor Station", "description": "Right screen flickering", "reportedBy": "SC" }
+        ],
+        "OperatorLog": [
+          { "id": "ol-1", "timestamp": 0, "shift": "morning", "operator": "JM", "category": "briefing", "entry": "Morning shift briefing completed. All systems nominal." },
+          { "id": "ol-2", "timestamp": -1, "shift": "night", "operator": "SC", "category": "handover", "entry": "Night shift handover to morning. No outstanding issues." }
+        ],
+        "FirewallLog": [
+          { "id": "fw-1", "timestamp": 0, "action": "allow", "sourceIp": "192.168.1.50", "destinationIp": "10.0.0.5", "port": 443, "protocol": "TCP" },
+          { "id": "fw-2", "timestamp": 0, "action": "deny", "sourceIp": "172.16.0.10", "destinationIp": "10.0.0.5", "port": 22, "protocol": "TCP" }
+        ],
+        "AdminLog": [
+          { "id": "adl-1", "timestamp": 0, "user": "Admin User", "action": "session.login", "detail": "User admin logged in", "ipAddress": "192.168.1.1" },
+          { "id": "adl-2", "timestamp": -1, "user": "Admin User", "action": "backup.create", "detail": "System snapshot created", "ipAddress": "192.168.1.1" }
+        ],
+        "ImportHistory": [
+          { "id": "imp-1", "filename": "staff_export_v2.xlsx", "date": -7, "user": "Admin User", "rowsTotal": 50, "rowsAccepted": 48, "rowsRejected": 2 }
+        ],
+        "NotificationRecord": [
+          { "id": "ntf-1", "staffId": "staff-1-{{testRunShortId}}", "channel": "email", "kind": "assignment", "subject": "New Assignment: RUN-1", "body": "You have been assigned to ARR on RUN-1.", "sentAt": -1 },
+          { "id": "ntf-2", "staffId": "staff-3-{{testRunShortId}}", "channel": "email", "kind": "training", "subject": "Training Invitation: LVO Refresher", "body": "You are invited to the LVO Refresher training.", "sentAt": -1 },
+          { "id": "ntf-3", "staffId": "staff-2-{{testRunShortId}}", "channel": "copy", "kind": "custom", "subject": "Schedule Note", "body": "Please check your updated roster.", "sentAt": 0 }
+        ]
+      },
+      "validation": { "status": "validated", "method": "endpoint-up-down" }
+    }
+  ]
+}
