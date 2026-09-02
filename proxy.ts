@@ -15,8 +15,9 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // Run on everything except the login page, the auth + seed API routes,
+  // the Autonoma test-data endpoint (guarded by its own HMAC signature),
   // Next internals, and static assets.
   matcher: [
-    "/((?!login|api/auth|api/seed-users|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|glb|gltf|mp3)$).*)",
+    "/((?!login|api/auth|api/seed-users|api/autonoma|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|ico|webp|woff|woff2|ttf|glb|gltf|mp3)$).*)",
   ],
 }

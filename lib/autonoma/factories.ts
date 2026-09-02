@@ -145,7 +145,8 @@ export const factories: FactoryRegistry = {
     refSchema: z
       .object({ id: z.string(), email: z.string() })
       .passthrough(),
-    create: async (data: Record<string, unknown>, ctx) => {
+    create: async (raw: Record<string, unknown>, ctx) => {
+      const data = resolveOffsets(raw)
       const email = String(data.email)
       const name = String(data.name ?? email)
       // Real sign-up → creates the Better Auth user AND a hashed credential
@@ -212,7 +213,8 @@ export const factories: FactoryRegistry = {
       })
       .passthrough(),
     refSchema: z.object({ id: z.string() }).passthrough(),
-    create: async (data: Record<string, unknown>, ctx) => {
+    create: async (raw: Record<string, unknown>, ctx) => {
+      const data = resolveOffsets(raw)
       const id = typeof data.id === "string" && data.id ? data.id : randomUUID()
       const userId = String(data.userId)
       const token = typeof data.token === "string" && data.token ? data.token : `autonoma-${randomUUID()}`
@@ -239,7 +241,8 @@ export const factories: FactoryRegistry = {
       .object({ id: loose.optional(), identifier: z.string(), value: loose.optional(), expiresAt: loose.optional() })
       .passthrough(),
     refSchema: z.object({ id: z.string() }).passthrough(),
-    create: async (data: Record<string, unknown>, ctx) => {
+    create: async (raw: Record<string, unknown>, ctx) => {
+      const data = resolveOffsets(raw)
       const id = typeof data.id === "string" && data.id ? data.id : randomUUID()
       const expiresAt = iso(data.expiresAt) ?? new Date(Date.now() + 3600 * 1000).toISOString()
       await db.insert(verificationTable).values({
