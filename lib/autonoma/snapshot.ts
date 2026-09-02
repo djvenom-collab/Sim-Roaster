@@ -74,9 +74,14 @@ export async function mergeRecords(
   const snapshot = await readSnapshot()
   for (const [slice, records] of Object.entries(bySlice)) {
     if (records.length === 0) continue
+    // Append IN PLACE. The app snapshot can hold tens of thousands of rows, so
+    // we push onto the existing array rather than spreading it into a fresh one
+    // ([...existing, ...tagged]) — the spread would duplicate the entire slice
+    // in memory on every seed, which is what drove the dev server toward its
+    // heap ceiling under repeated Autonoma runs.
     const existing = Array.isArray(snapshot[slice]) ? (snapshot[slice] as unknown[]) : []
-    const tagged = records.map((r) => cleanForSnapshot(r, runId))
-    snapshot[slice] = [...existing, ...tagged]
+    for (const r of records) existing.push(cleanForSnapshot(r, runId))
+    snapshot[slice] = existing
   }
   await writeSnapshot(snapshot)
 }
@@ -89,14 +94,18 @@ export async function mergeRecords(
 export async function removeRecords(runId: string): Promise<void> {
   const snapshot = await readSnapshot()
   let changed = false
-  for (const [key, value] of Object.entries(snapshot)) {
+  for (const value of Object.values(snapshot)) {
     if (!Array.isArray(value)) continue
-    const filtered = value.filter(
-      (row) => !(row && typeof row === "object" && (row as Record<string, unknown>)[RUN_TAG] === runId),
-    )
-    if (filtered.length !== value.length) {
-      snapshot[key] = filtered
-      changed = true
+    // Prune IN PLACE with a single reverse splice pass. Building a `.filter()`
+    // copy of a tens-of-thousands-row array on every teardown is exactly the
+    // transient allocation that pushed the dev server past its heap limit;
+    // splicing mutates the existing array without duplicating it.
+    for (let i = value.length - 1; i >= 0; i--) {
+      const row = value[i]
+      if (row && typeof row === "object" && (row as Record<string, unknown>)[RUN_TAG] === runId) {
+        value.splice(i, 1)
+        changed = true
+      }
     }
   }
   if (changed) await writeSnapshot(snapshot)
