@@ -94,4 +94,5 @@ When a new domain entity is added to the app:
 1. Add a factory in `lib/autonoma/factories.ts`.
 2. Map its model name → PersistedState slice in `SLICE_FOR_MODEL`.
 3. Add its records (with `_alias`/`_ref` wiring) to the recipe generator
-   `.autonoma-scratch/gen-recipe.mjs`, regenerate, and run `sdk check`.
+   `scripts/autonoma/gen-recipe.mjs`, regenerate with
+   `node scripts/autonoma/gen-recipe.mjs`, and run `sdk check`.

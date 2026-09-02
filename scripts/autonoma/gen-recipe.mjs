@@ -1,5 +1,11 @@
-/* Generates recipe.json from the standard scenario.
- * Not shipped — lives in .autonoma-scratch (gitignored). */
+/* Generates the Autonoma recipe.json from the standard scenario.
+ *
+ * Usage:  node scripts/autonoma/gen-recipe.mjs [outputPath]
+ * Default output: ~/.autonoma/v0-project/recipe.json
+ *
+ * Every entity is expressed with `_alias` / `_ref` wiring and time fields use
+ * the `<field>OffsetDays` / `<field>OffsetHours` convention, which the
+ * factories in lib/autonoma resolve to concrete values at seed time. */
 import { writeFileSync } from "node:fs"
 
 const ref = (a) => ({ _ref: a })
