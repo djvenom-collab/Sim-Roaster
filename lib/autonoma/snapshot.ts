@@ -9,6 +9,11 @@
  * snapshot and tearing down by REMOVING exactly the records they added. Every
  * seeded record carries an `__autonomaRunId` tag so teardown is surgical and
  * never touches the developer's real data or another concurrent run's rows.
+ *
+ * NOTE ON CONCURRENCY: the blob is a single global document, so two overlapping
+ * runs read-modify-write the same file. `mergeRecords` re-reads immediately
+ * before writing to reduce clobbering, but this is best-effort — see
+ * IMPLEMENTATION.md for the documented limitation.
  * =========================================================================== */
 import { get, put } from "@vercel/blob"
 import { SNAPSHOT_VERSION } from "@/lib/persisted-state"
@@ -45,6 +50,18 @@ export async function writeSnapshot(snapshot: Snapshot): Promise<void> {
   })
 }
 
+// Strip SDK-internal fields (any `__`-prefixed key) from a record before it is
+// written into the app snapshot — EXCEPT the run tag, which teardown needs.
+function cleanForSnapshot(record: Record<string, unknown>, runId: string): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(record)) {
+    if (k.startsWith("__")) continue
+    out[k] = v
+  }
+  out[RUN_TAG] = runId
+  return out
+}
+
 /**
  * Append seeded records (keyed by PersistedState slice) into the live snapshot,
  * tagging each with the run id. Reads the latest snapshot first so overlapping
@@ -58,7 +75,7 @@ export async function mergeRecords(
   for (const [slice, records] of Object.entries(bySlice)) {
     if (records.length === 0) continue
     const existing = Array.isArray(snapshot[slice]) ? (snapshot[slice] as unknown[]) : []
-    const tagged = records.map((r) => ({ ...r, [RUN_TAG]: runId }))
+    const tagged = records.map((r) => cleanForSnapshot(r, runId))
     snapshot[slice] = [...existing, ...tagged]
   }
   await writeSnapshot(snapshot)
@@ -83,4 +100,19 @@ export async function removeRecords(runId: string): Promise<void> {
     }
   }
   if (changed) await writeSnapshot(snapshot)
+}
+
+/**
+ * Find this run's id from a refs map. Every factory stamps `__autonomaRunId`
+ * onto the record it returns, so the value is present on any ref record and is
+ * carried inside the signed refs token used by `down`.
+ */
+export function runIdFromRefs(refs: Record<string, Record<string, unknown>[]>, fallback: string): string {
+  for (const records of Object.values(refs)) {
+    for (const record of records) {
+      const tag = record?.[RUN_TAG]
+      if (typeof tag === "string" && tag) return tag
+    }
+  }
+  return fallback
 }
