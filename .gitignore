@@ -14,3 +14,6 @@ node_modules
 .next/
 .DS_Store
 .vercel
+
+# Autonoma local scratch (not shipped)
+.autonoma-scratch/
