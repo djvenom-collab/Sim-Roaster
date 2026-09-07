@@ -92,6 +92,22 @@ read-modify-write the same file. `mergeRecords`/`removeRecords` re-read
 immediately before writing to minimize clobbering, but this is best-effort. The
 `--repeat 3` proof passes because each run tags and removes only its own rows.
 
+## Re-validation (fresh planner run)
+The integration code (endpoint, factories, config, snapshot, generator, and the
+AGENTS.md maintenance note) was already merged to `main` by an earlier session,
+so this run added no new integration code. It regenerated `recipe.json` from the
+current scenario and re-validated the live endpoint end to end:
+- `node scripts/autonoma/gen-recipe.mjs` → 33 entities, 174 records.
+- `sdk check` on `recipe.json` → `ok: true`, 0 problems.
+- Full `sdk up` (timeout 240s) → `ok: true`; verified in Postgres: 6 `user`
+  rows (correct `appRole`, `emailVerified = true`), 6 `account`, 9 `session`.
+- Live login `POST /api/auth/sign-in/email` for a seeded user → HTTP 200
+  (auth callback returns real, usable credentials).
+- `sdk down` → rows gone (0 users / 0 sessions for the run tag).
+- Wrong `x-signature` → HTTP 401 (SDK rejects).
+- Concurrency proof `sdk up --repeat 3` (timeout 300s) → `ok: true`, all three
+  instances live at once, all torn down; 0 leftover `cli-*@simops.test` rows.
+
 ## Maintenance
 When a new domain entity is added to the app:
 1. Add a factory in `lib/autonoma/factories.ts`.
