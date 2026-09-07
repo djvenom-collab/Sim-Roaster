@@ -23,6 +23,7 @@ This app stores data in **two** backends, so seeding spans both:
 - `lib/autonoma/snapshot.ts` — blob read/merge/remove keyed by `__autonomaRunId`.
 - `proxy.ts` — `/api/autonoma` exempted from the session gate (guarded by its own HMAC).
 - Recipe file: `/home/vercel-sandbox/.autonoma/v0-project/recipe.json` (33 entities, 174 records).
+- Maintenance note appended to `AGENTS.md` ("Autonoma test data" section).
 
 ### Time handling
 The recipe never hardcodes an instant. Fields compared against "now" are passed
@@ -77,11 +78,13 @@ time) converts them to concrete values. There is no time token — by design.
 - [x] Teardown removes exactly this run's rows (Postgres cascade + blob run tag).
 - [x] Auth callback returns real, usable credentials (login verified → HTTP 200 + session).
 - [x] Maintenance note (this file).
-- [x] Full-recipe `up` succeeds; all rows created (6 PG users + 159 blob rows), then `down` removes them all.
-- [x] Concurrent-instances proof (`--repeat 3`) → `ok: true`, all three live at once.
+- [x] Full-recipe `up` succeeds; all rows created (6 PG users + 2 sessions + 159 blob rows), then `down` removes them all (verified: 0 tagged rows, 0 test users/sessions).
+- [x] Time-sensitive fields land on the intended side of "now" (runs: 5 past / 3 future; future + past leave; session expiry in the future).
+- [x] Auth callback returns real, usable credentials — verified a live `POST /api/auth/sign-in/email` login returns HTTP 200 for a seeded user.
+- [x] Concurrent-instances proof (`--repeat 3`) → `ok: true`, all three live at once, then torn down to a clean slate.
 - [x] Clean `sdk check` on `recipe.json` → `ok: true`, 0 problems.
-- [x] Wrong signature rejected → HTTP 401.
-- [ ] Pushed branch + opened pull request.
+- [x] Wrong signature rejected → HTTP 401 (`INVALID_SIGNATURE`).
+- [x] Pushed branch + opened pull request.
 
 ## Known limitation
 The blob snapshot is one global document, so two overlapping `up`/`down` calls
