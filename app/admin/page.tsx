@@ -18,6 +18,7 @@ import { PageHeader, EmptyState } from "@/components/shared"
 import { UserEditorDialog } from "@/components/user-editor-dialog"
 import { ArchivePanel } from "@/components/archive-panel"
 import { ServerAuditLog } from "@/components/server-audit-log"
+import { RiskRegisterPanel } from "@/components/risk/risk-register-panel"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -103,6 +104,7 @@ export default function AdminPage() {
           <TabsTrigger value="matrix">Permission matrix</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
           <TabsTrigger value="archive">Data archive</TabsTrigger>
+          {store.currentRole === "Admin" ? <TabsTrigger value="risks">Risk register</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
@@ -336,6 +338,12 @@ export default function AdminPage() {
         <TabsContent value="archive" className="mt-4">
           <ArchivePanel />
         </TabsContent>
+
+        {store.currentRole === "Admin" ? (
+          <TabsContent value="risks" className="mt-4">
+            <RiskRegisterPanel />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   )
