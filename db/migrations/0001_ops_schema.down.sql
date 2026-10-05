@@ -1,0 +1,13 @@
+-- ============================================================================
+-- 0001 ROLLBACK — removes the `ops` schema and everything in it.
+-- ============================================================================
+-- Scope: ONLY the `ops` schema created by 0001_ops_schema.up.sql.
+-- Untouched: public."user"/session/account/verification (Better Auth) and the
+-- Vercel Blob snapshot sim-roster/state.json, which remains authoritative until
+-- the cutover in docs/data-architecture-migration.md is signed off.
+--
+-- SAFE ONLY BEFORE CUTOVER. After cutover, PostgreSQL holds writes that do not
+-- exist in Blob; run scripts/migration/export-to-snapshot.mjs first (see the
+-- plan, Phase 7) or those writes are lost.
+-- ============================================================================
+DROP SCHEMA IF EXISTS ops CASCADE;

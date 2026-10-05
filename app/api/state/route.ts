@@ -1,13 +1,13 @@
-import { put, get } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { authorize, hasPermission, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
 import { reconcilePermissionMatrix, type Permission } from "@/lib/permissions"
+import { ConcurrencyConflictError, stateRepository, type Snapshot } from "@/lib/repository/state-repository"
 
-// The whole app's data is stored as ONE JSON snapshot in Vercel Blob (private
-// store). This is the single source of truth that survives rebuilds — the seed
-// only ever fills a brand-new store. GET reads the snapshot, PUT overwrites it.
+// The app's data is one JSON snapshot behind lib/repository/state-repository.
+// GET returns it with a revision (ETag). PUT requires If-Match with that
+// revision once a snapshot exists: a stale revision means another session wrote
+// in between, so the write is rejected with 409 instead of silently erasing it.
 
-const PATHNAME = "sim-roster/state.json"
 const MAX_BODY_BYTES = 8 * 1024 * 1024
 
 // Slices that grant or describe access. A caller without the listed permission
@@ -18,30 +18,23 @@ const PROTECTED_SLICES: Record<string, Permission> = {
   users: "manage_users",
 }
 
-// Never cache — we always want the latest saved snapshot.
 export const dynamic = "force-dynamic"
 export const revalidate = 0
-
-async function readCurrentState(): Promise<Record<string, unknown> | null> {
-  const result = await get(PATHNAME, { access: "private", useCache: false })
-  if (!result || result.statusCode === 304 || !result.stream) return null
-  const text = await new Response(result.stream).text()
-  return text ? (JSON.parse(text) as Record<string, unknown>) : null
-}
 
 export async function GET(request: NextRequest) {
   const authz = await authorize(request, { rateLimit: { bucket: "state-read", limit: 120, windowSec: 60 } })
   if (!authz.ok) return authz.response
 
   try {
-    const state = await readCurrentState()
+    const { state, revision } = await stateRepository.read()
+    const headers: Record<string, string> = { "Cache-Control": "no-store" }
+    if (revision) headers.ETag = revision
     // No snapshot yet → tell the client to seed from sample data.
-    return NextResponse.json({ state }, { headers: { "Cache-Control": "no-store" } })
+    return NextResponse.json({ state, revision }, { headers })
   } catch (error) {
     console.error("[state] GET error:", (error as Error).message)
-    // On read failure, return null so the app still boots from the seed rather
-    // than crashing. It will not overwrite an existing snapshot (see the store).
-    return NextResponse.json({ state: null, error: "read_failed" }, { status: 200 })
+    // The client stays read-only on error, so it never overwrites real data.
+    return NextResponse.json({ state: null, revision: null, error: "read_failed" }, { status: 200 })
   }
 }
 
@@ -52,40 +45,46 @@ export async function PUT(request: NextRequest) {
   const declaredLength = Number(request.headers.get("content-length") ?? 0)
   if (declaredLength > MAX_BODY_BYTES) return jsonError(413, "payload_too_large")
 
-  let incoming: Record<string, unknown>
+  let incoming: Snapshot
   try {
     const body = await request.text()
     if (!body) return jsonError(400, "empty_body")
     if (body.length > MAX_BODY_BYTES) return jsonError(413, "payload_too_large")
     const parsed: unknown = JSON.parse(body)
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return jsonError(400, "invalid_state")
-    incoming = parsed as Record<string, unknown>
+    incoming = parsed as Snapshot
   } catch {
     return jsonError(400, "invalid_json")
   }
 
+  const expectedRevision = request.headers.get("if-match")
+
   try {
-    let current: Record<string, unknown> | null | undefined
+    const current = await stateRepository.read()
+
+    // Once a snapshot exists, a blind overwrite is never allowed.
+    if (current.state && !expectedRevision) return jsonError(428, "revision_required")
+    if (current.state && expectedRevision && current.revision !== expectedRevision.replace(/^W\//, "")) {
+      return NextResponse.json({ error: "concurrency_conflict", revision: current.revision }, { status: 409 })
+    }
+
     for (const [slice, perm] of Object.entries(PROTECTED_SLICES)) {
       if (await hasPermission(authz.ctx.role, perm)) continue
-      if (current === undefined) current = await readCurrentState()
-      if (current && slice in current) {
-        incoming[slice] = current[slice]
+      if (current.state && slice in current.state) {
+        incoming[slice] = current.state[slice]
       } else if (slice === "permissionMatrix") {
         incoming[slice] = reconcilePermissionMatrix(null)
       }
     }
 
-    await put(PATHNAME, JSON.stringify(incoming), {
-      access: "private",
-      allowOverwrite: true,
-      contentType: "application/json",
-      // Snapshot changes constantly; don't let the CDN cache it.
-      cacheControlMaxAge: 0,
-    })
+    // The conditional write closes the race between the read above and here.
+    const { revision } = await stateRepository.write(incoming, { expectedRevision: current.revision })
     invalidatePermissionCache()
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, revision }, { headers: { ETag: revision } })
   } catch (error) {
+    if (error instanceof ConcurrencyConflictError) {
+      return NextResponse.json({ error: "concurrency_conflict" }, { status: 409 })
+    }
     console.error("[state] PUT error:", (error as Error).message)
     return jsonError(500, "write_failed")
   }
