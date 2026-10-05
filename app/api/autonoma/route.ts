@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
   const secretsPresent = Boolean(process.env.AUTONOMA_SHARED_SECRET && process.env.AUTONOMA_SIGNING_SECRET)
   if (!secretsPresent) {
     return NextResponse.json(
-      { error: "autonoma_not_configured", detail: "AUTONOMA_SHARED_SECRET / AUTONOMA_SIGNING_SECRET missing" },
+      { error: "autonoma_not_configured" },
       { status: 503 },
     )
   }
@@ -59,6 +59,6 @@ export async function POST(request: NextRequest) {
     // AutonomaError carries an http status + code; surface it when present.
     const status = (error as { status?: number })?.status ?? 500
     const code = (error as { code?: string })?.code ?? "internal_error"
-    return NextResponse.json({ error: code, detail: message }, { status })
+    return NextResponse.json({ error: code }, { status })
   }
 }

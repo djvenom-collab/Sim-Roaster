@@ -340,6 +340,9 @@ export function StoreProvider({
   // existing one, or confirmed the store is empty). If the load errors, we stay
   // read-only for the session rather than risk clobbering good data on Blob.
   const canSaveRef = useRef(false)
+  // Revision (ETag) of the snapshot this session last read or wrote. Sent as
+  // If-Match so a save never silently overwrites another session's changes.
+  const revisionRef = useRef<string | null>(null)
 
   // Hydrate the persisted program scope on the client (avoids SSR mismatch).
   useEffect(() => {
@@ -455,8 +458,13 @@ export function StoreProvider({
     ;(async () => {
       try {
         const res = await fetch("/api/state", { cache: "no-store" })
-        const json = (await res.json()) as { state: Partial<PersistedState> | null; error?: string }
+        const json = (await res.json()) as {
+          state: Partial<PersistedState> | null
+          revision?: string | null
+          error?: string
+        }
         if (cancelled) return
+        revisionRef.current = json?.revision ?? null
         const snap = json?.state
         if (snap && typeof snap === "object") {
           // Apply each slice only if present, so newly-added slices in a later
@@ -670,11 +678,32 @@ export function StoreProvider({
     const id = setTimeout(() => {
       // NOTE: no `keepalive` — the snapshot can exceed the 64KB keepalive body
       // limit, which throws "Failed to fetch". Debounced saves cover every edit.
-      fetch("/api/state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(snapshot),
-      }).catch((e) => console.error("[v0] snapshot save failed", e))
+      if (!canSaveRef.current) return
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (revisionRef.current) headers["If-Match"] = revisionRef.current
+      fetch("/api/state", { method: "PUT", headers, body: JSON.stringify(snapshot) })
+        .then(async (res) => {
+          if (res.ok) {
+            const body = (await res.json().catch(() => null)) as { revision?: string } | null
+            revisionRef.current = body?.revision ?? res.headers.get("ETag") ?? revisionRef.current
+            return
+          }
+          if (res.status === 409 || res.status === 428) {
+            // Another session saved first. Stop autosaving so this tab cannot
+            // overwrite their work; a reload picks up the latest data.
+            canSaveRef.current = false
+            console.error("[sim-roster] snapshot changed in another session; reload to continue editing")
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("sim-roster:save-conflict"))
+              window.alert(
+                "Your changes could not be saved because someone else updated the roster in the meantime. Reload the page to load the latest data, then re-apply your change.",
+              )
+            }
+            return
+          }
+          console.error("[sim-roster] snapshot save failed", res.status)
+        })
+        .catch((e) => console.error("[sim-roster] snapshot save failed", e))
     }, 800)
     return () => clearTimeout(id)
   }, [

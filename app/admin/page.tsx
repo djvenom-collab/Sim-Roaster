@@ -17,6 +17,8 @@ import { can, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@/li
 import { PageHeader, EmptyState } from "@/components/shared"
 import { UserEditorDialog } from "@/components/user-editor-dialog"
 import { ArchivePanel } from "@/components/archive-panel"
+import { ServerAuditLog } from "@/components/server-audit-log"
+import { RiskRegisterPanel } from "@/components/risk/risk-register-panel"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -102,6 +104,7 @@ export default function AdminPage() {
           <TabsTrigger value="matrix">Permission matrix</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
           <TabsTrigger value="archive">Data archive</TabsTrigger>
+          {store.currentRole === "Admin" ? <TabsTrigger value="risks">Risk register</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="users" className="mt-4">
@@ -262,11 +265,14 @@ export default function AdminPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="audit" className="mt-4">
+        <TabsContent value="audit" className="mt-4 flex flex-col gap-4">
+          {store.currentRole === "Admin" ? <ServerAuditLog /> : null}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Audit log ({store.auditLogs.length})</CardTitle>
-              <CardDescription>Chronological record of system changes</CardDescription>
+              <CardTitle className="text-base">Client activity log ({store.auditLogs.length})</CardTitle>
+              <CardDescription>
+                Legacy browser-side activity notes. Not tamper-evident; the server audit trail is authoritative.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {!canViewAudit ? (
@@ -332,6 +338,12 @@ export default function AdminPage() {
         <TabsContent value="archive" className="mt-4">
           <ArchivePanel />
         </TabsContent>
+
+        {store.currentRole === "Admin" ? (
+          <TabsContent value="risks" className="mt-4">
+            <RiskRegisterPanel />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   )
