@@ -8,6 +8,7 @@
 import { put } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { authorize, jsonError } from "@/lib/security/authz"
+import { actorFromAuth, auditContext, recordAuditSafe } from "@/lib/audit/log"
 
 // Vercel Functions cap request bodies at 4.5 MB.
 const MAX_FILE_BYTES = 4.5 * 1024 * 1024
@@ -39,6 +40,16 @@ export async function POST(request: NextRequest) {
     const blob = await put(`training/${Date.now()}-${safeName}`, file, {
       access: "private",
     })
+
+    await recordAuditSafe(auditContext(request, actorFromAuth(authz.ctx), "api/training-attachments/upload"), [
+      {
+        action: "attachment.upload",
+        entityType: "training_attachment",
+        entityId: blob.pathname,
+        entityLabel: file.name.slice(0, 200),
+        newValue: { size: file.size, contentType: file.type || "application/octet-stream" },
+      },
+    ])
 
     return NextResponse.json({
       name: file.name.slice(0, 200),

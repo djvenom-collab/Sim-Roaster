@@ -2,6 +2,7 @@ import { put, get } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { authorize, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
 import { backupIdSchema } from "@/lib/security/validation"
+import { AuditUnavailableError, actorFromAuth, auditContext, withAudit } from "@/lib/audit/log"
 
 export const dynamic = "force-dynamic"
 
@@ -43,18 +44,32 @@ export async function POST(request: NextRequest) {
       return jsonError(422, "invalid_json")
     }
 
-    // Overwrite the live state with the backup content.
-    await put(STATE_PATH, snapshotText, {
-      access: "private",
-      allowOverwrite: true,
-      contentType: "application/json",
-      cacheControlMaxAge: 0,
-    })
+    // Overwrite the live state with the backup content; refused if it cannot be audited.
+    const audit = auditContext(request, actorFromAuth(authz.ctx), "api/backup/restore")
+    await withAudit(
+      audit,
+      [
+        {
+          action: "data.restore",
+          entityType: "snapshot",
+          entityId: STATE_PATH,
+          entityLabel: id,
+          newValue: { backupId: id, bytes: new TextEncoder().encode(snapshotText).byteLength },
+        },
+      ],
+      () =>
+        put(STATE_PATH, snapshotText, {
+          access: "private",
+          allowOverwrite: true,
+          contentType: "application/json",
+          cacheControlMaxAge: 0,
+        }),
+    )
     invalidatePermissionCache()
-    console.info(`[audit] backup restored id=${id} by user=${authz.ctx.userId}`)
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true }, { headers: { "X-Correlation-Id": audit.correlationId } })
   } catch (error) {
+    if (error instanceof AuditUnavailableError) return jsonError(503, "audit_unavailable", { "Retry-After": "5" })
     console.error("[backup] restore error:", (error as Error).message)
     return jsonError(500, "restore_failed")
   }

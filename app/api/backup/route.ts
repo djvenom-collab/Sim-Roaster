@@ -2,6 +2,7 @@ import { put, get, list } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { authorize, jsonError } from "@/lib/security/authz"
+import { actorFromAuth, auditContext, recordAuditSafe } from "@/lib/audit/log"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -94,6 +95,10 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString(),
       size: new TextEncoder().encode(stateText).byteLength,
     }
+
+    await recordAuditSafe(auditContext(request, actorFromAuth(authz.ctx), "api/backup"), [
+      { action: "backup.create", entityType: "backup", entityId: backup.id, entityLabel: backup.label, newValue: { size: backup.size } },
+    ])
 
     return NextResponse.json({ ok: true, backup }, { status: 201 })
   } catch (error) {

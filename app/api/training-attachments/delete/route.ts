@@ -9,6 +9,7 @@ import { del } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
 import { authorize, jsonError } from "@/lib/security/authz"
 import { isTrainingBlobUrl } from "@/lib/security/validation"
+import { actorFromAuth, auditContext, recordAuditSafe } from "@/lib/audit/log"
 
 export async function DELETE(request: NextRequest) {
   const authz = await authorize(request, {
@@ -23,7 +24,11 @@ export async function DELETE(request: NextRequest) {
       return jsonError(400, "invalid_url")
     }
 
-    await del(body.url as string)
+    const url = body.url as string
+    await del(url)
+    await recordAuditSafe(auditContext(request, actorFromAuth(authz.ctx), "api/training-attachments/delete"), [
+      { action: "attachment.delete", entityType: "training_attachment", entityId: new URL(url).pathname },
+    ])
 
     return NextResponse.json({ success: true })
   } catch (error) {

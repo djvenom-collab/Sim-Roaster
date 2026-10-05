@@ -2,6 +2,18 @@ import { type NextRequest, NextResponse } from "next/server"
 import { authorize, hasPermission, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
 import { reconcilePermissionMatrix, type Permission } from "@/lib/permissions"
 import { ConcurrencyConflictError, stateRepository, type Snapshot } from "@/lib/repository/state-repository"
+import {
+  AuditUnavailableError,
+  actorFromAuth,
+  auditContext,
+  recordAuditSafe,
+  stableStringify,
+  withAudit,
+  type AuditEventInput,
+} from "@/lib/audit/log"
+import { diffSnapshots } from "@/lib/audit/diff"
+
+const STATE_ENTITY_ID = "sim-roster/state.json"
 
 // The app's data is one JSON snapshot behind lib/repository/state-repository.
 // GET returns it with a revision (ETag). PUT requires If-Match with that
@@ -58,32 +70,82 @@ export async function PUT(request: NextRequest) {
   }
 
   const expectedRevision = request.headers.get("if-match")
+  const audit = auditContext(request, actorFromAuth(authz.ctx), "api/state")
+  const traceHeaders = { "X-Correlation-Id": audit.correlationId }
+  const saveEvent = (extra: Partial<AuditEventInput> = {}): AuditEventInput => ({
+    action: "state.save",
+    entityType: "snapshot",
+    entityId: STATE_ENTITY_ID,
+    ...extra,
+  })
 
   try {
     const current = await stateRepository.read()
 
     // Once a snapshot exists, a blind overwrite is never allowed.
-    if (current.state && !expectedRevision) return jsonError(428, "revision_required")
+    if (current.state && !expectedRevision) {
+      await recordAuditSafe(audit, [saveEvent({ result: "failure", failureReason: "revision_required" })])
+      return jsonError(428, "revision_required", traceHeaders)
+    }
     if (current.state && expectedRevision && current.revision !== expectedRevision.replace(/^W\//, "")) {
-      return NextResponse.json({ error: "concurrency_conflict", revision: current.revision }, { status: 409 })
+      await recordAuditSafe(audit, [
+        saveEvent({
+          result: "failure",
+          failureReason: "concurrency_conflict",
+          previousValue: { expectedRevision },
+          newValue: { currentRevision: current.revision },
+        }),
+      ])
+      return NextResponse.json(
+        { error: "concurrency_conflict", revision: current.revision },
+        { status: 409, headers: traceHeaders },
+      )
     }
 
+    const denied: AuditEventInput[] = []
     for (const [slice, perm] of Object.entries(PROTECTED_SLICES)) {
       if (await hasPermission(authz.ctx.role, perm)) continue
       if (current.state && slice in current.state) {
+        if (slice in incoming && stableStringify(incoming[slice]) !== stableStringify(current.state[slice])) {
+          denied.push({
+            action: "authz.denied",
+            entityType: slice,
+            reason: "Change to a protected slice was discarded; the stored value was kept",
+            result: "failure",
+            failureReason: `missing_permission:${perm}`,
+          })
+        }
         incoming[slice] = current.state[slice]
       } else if (slice === "permissionMatrix") {
         incoming[slice] = reconcilePermissionMatrix(null)
       }
     }
+    if (denied.length > 0) await recordAuditSafe(audit, denied)
 
+    const diff = diffSnapshots(current.state, incoming)
     // The conditional write closes the race between the read above and here.
-    const { revision } = await stateRepository.write(incoming, { expectedRevision: current.revision })
+    const write = () => stateRepository.write(incoming, { expectedRevision: current.revision })
+
+    let revision: string
+    if (diff.changeCount === 0) {
+      ;({ revision } = await write())
+    } else {
+      const summary = saveEvent({
+        previousValue: { revision: current.revision },
+        newValue: { changes: diff.changeCount, slices: diff.summary },
+      })
+      ;({ revision } = await withAudit(audit, [summary, ...diff.events], write, { failureEvents: [summary] }))
+    }
     invalidatePermissionCache()
-    return NextResponse.json({ ok: true, revision }, { headers: { ETag: revision } })
+    return NextResponse.json({ ok: true, revision }, { headers: { ETag: revision, ...traceHeaders } })
   } catch (error) {
+    if (error instanceof AuditUnavailableError) {
+      // Fail closed: an unrecorded change is not applied.
+      console.error("[state] PUT rejected, audit unavailable:", error.message)
+      return jsonError(503, "audit_unavailable", { ...traceHeaders, "Retry-After": "5" })
+    }
     if (error instanceof ConcurrencyConflictError) {
-      return NextResponse.json({ error: "concurrency_conflict" }, { status: 409 })
+      return NextResponse.json({ error: "concurrency_conflict" }, { status: 409, headers: traceHeaders })
     }
     console.error("[state] PUT error:", (error as Error).message)
     return jsonError(500, "write_failed")

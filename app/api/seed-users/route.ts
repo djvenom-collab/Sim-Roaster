@@ -6,6 +6,7 @@ import { NextResponse } from "next/server"
 import { isDemoSeedEnabled } from "@/lib/security/env"
 import { isSameOriginRequest, jsonError } from "@/lib/security/authz"
 import { checkRateLimit, clientIp } from "@/lib/security/rate-limit"
+import { AuditUnavailableError, SYSTEM_ACTOR, auditContext, recordAuditSafe, withAudit } from "@/lib/audit/log"
 
 // One demo account per access level (1-6). All use the password "admin".
 // This is a convenience seeder for the demo; every account is created through
@@ -29,17 +30,41 @@ export async function POST(request: Request) {
   if (!rl.allowed) return jsonError(429, "rate_limited", { "Retry-After": String(rl.retryAfterSec) })
 
   const results: { email: string; role: string; status: string }[] = []
+  const audit = auditContext(request, { ...SYSTEM_ACTOR, role: "demo-seed" }, "api/seed-users")
 
   for (const acct of SEED_ACCOUNTS) {
     const existing = await db
-      .select({ id: user.id })
+      .select({ id: user.id, appRole: user.appRole })
       .from(user)
       .where(eq(user.email, acct.email))
       .limit(1)
 
     if (existing.length > 0) {
       // Make sure the role tag is correct even if the account already exists.
-      await db.update(user).set({ appRole: acct.role }).where(eq(user.email, acct.email))
+      const [row] = existing
+      if (row.appRole !== acct.role) {
+        try {
+          await withAudit(
+            audit,
+            [
+              {
+                action: "user.role_change",
+                entityType: "auth_user",
+                entityId: row.id,
+                entityLabel: acct.email,
+                previousValue: { appRole: row.appRole },
+                newValue: { appRole: acct.role },
+                reason: "demo seed",
+              },
+            ],
+            () => db.update(user).set({ appRole: acct.role }).where(eq(user.email, acct.email)),
+          )
+        } catch (err) {
+          if (!(err instanceof AuditUnavailableError)) throw err
+          results.push({ email: acct.email, role: acct.role, status: "audit_unavailable" })
+          continue
+        }
+      }
       results.push({ email: acct.email, role: acct.role, status: "exists" })
       continue
     }
@@ -53,6 +78,16 @@ export async function POST(request: Request) {
         .update(user)
         .set({ appRole: acct.role, emailVerified: true })
         .where(eq(user.email, acct.email))
+      await recordAuditSafe(audit, [
+        {
+          action: "user.role_change",
+          entityType: "auth_user",
+          entityLabel: acct.email,
+          previousValue: { appRole: null },
+          newValue: { appRole: acct.role },
+          reason: "demo seed",
+        },
+      ])
       results.push({ email: acct.email, role: acct.role, status: "created" })
     } catch (err) {
       console.error("[seed-users] error for", acct.email, (err as Error).message)

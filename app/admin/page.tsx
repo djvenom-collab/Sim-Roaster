@@ -17,6 +17,7 @@ import { can, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@/li
 import { PageHeader, EmptyState } from "@/components/shared"
 import { UserEditorDialog } from "@/components/user-editor-dialog"
 import { ArchivePanel } from "@/components/archive-panel"
+import { ServerAuditLog } from "@/components/server-audit-log"
 import { ConfirmDialog } from "@/components/confirm-dialog"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -262,11 +263,14 @@ export default function AdminPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="audit" className="mt-4">
+        <TabsContent value="audit" className="mt-4 flex flex-col gap-4">
+          {store.currentRole === "Admin" ? <ServerAuditLog /> : null}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Audit log ({store.auditLogs.length})</CardTitle>
-              <CardDescription>Chronological record of system changes</CardDescription>
+              <CardTitle className="text-base">Client activity log ({store.auditLogs.length})</CardTitle>
+              <CardDescription>
+                Legacy browser-side activity notes. Not tamper-evident; the server audit trail is authoritative.
+              </CardDescription>
             </CardHeader>
             <CardContent>
               {!canViewAudit ? (

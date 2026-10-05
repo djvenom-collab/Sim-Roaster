@@ -1,6 +1,96 @@
 import { betterAuth } from "better-auth"
+import { createAuthMiddleware, getSessionFromCtx, isAPIError } from "better-auth/api"
 import { pool } from "@/lib/db"
 import { assertServerEnv, isDemoSeedEnabled } from "@/lib/security/env"
+import { SYSTEM_ACTOR, auditContext, recordAuditSafe, type AuditActor } from "@/lib/audit/log"
+
+// Paths whose outcome is a security event. Successful sign-ins are detected via
+// ctx.context.newSession so the email and social (callback) flows share one path.
+const LOGIN_PATHS = new Set(["/sign-in/email", "/sign-in/social", "/sign-up/email"])
+
+type HookCtx = Parameters<Parameters<typeof createAuthMiddleware>[0]>[0]
+
+function hookAudit(ctx: HookCtx, actor: AuditActor) {
+  return auditContext(ctx.headers ?? ctx.request?.headers ?? new Headers(), actor, `auth${ctx.path}`)
+}
+
+function failureCode(returned: unknown): string {
+  if (!isAPIError(returned)) return "unknown"
+  const body = returned.body as { code?: string } | undefined
+  return body?.code ?? String(returned.status)
+}
+
+function userActor(user: { id: string; email: string; appRole?: unknown }): AuditActor {
+  return { userId: user.id, email: user.email, role: typeof user.appRole === "string" ? user.appRole : null }
+}
+
+const authAuditHooks = {
+  before: createAuthMiddleware(async (ctx) => {
+    if (ctx.path !== "/sign-out") return
+    const session = await getSessionFromCtx(ctx).catch(() => null)
+    if (!session) return
+    await recordAuditSafe(hookAudit(ctx, userActor(session.user)), [
+      { action: "auth.logout", entityType: "session", entityId: session.session.id },
+    ])
+  }),
+  after: createAuthMiddleware(async (ctx) => {
+    const returned = ctx.context.returned
+    const failed = isAPIError(returned)
+    const newSession = ctx.context.newSession
+    const body = (ctx.body ?? {}) as { email?: unknown }
+    const claimedEmail = typeof body.email === "string" ? body.email.slice(0, 200).toLowerCase() : null
+
+    if (!failed && newSession && (LOGIN_PATHS.has(ctx.path) || ctx.path.startsWith("/callback/"))) {
+      await recordAuditSafe(hookAudit(ctx, userActor(newSession.user)), [
+        {
+          action: "auth.login",
+          entityType: "session",
+          entityId: newSession.session.id,
+          newValue: { method: ctx.path.startsWith("/callback/") ? `oauth:${ctx.params?.id ?? "unknown"}` : ctx.path },
+        },
+      ])
+      return
+    }
+    if (failed && (ctx.path === "/sign-in/email" || ctx.path === "/sign-up/email")) {
+      // The actor is unauthenticated: only the claimed email is stored, never the password.
+      await recordAuditSafe(hookAudit(ctx, { userId: null, email: claimedEmail, role: null }), [
+        {
+          action: ctx.path === "/sign-in/email" ? "auth.login" : "auth.signup",
+          entityType: "session",
+          result: "failure",
+          failureReason: failureCode(returned),
+        },
+      ])
+      return
+    }
+    if (ctx.path === "/change-password" || ctx.path === "/set-password" || ctx.path === "/reset-password") {
+      const session = await getSessionFromCtx(ctx).catch(() => null)
+      await recordAuditSafe(hookAudit(ctx, session ? userActor(session.user) : { ...SYSTEM_ACTOR, role: null }), [
+        {
+          action: "auth.password_change",
+          entityType: "user",
+          entityId: session?.user.id ?? null,
+          result: failed ? "failure" : "success",
+          failureReason: failed ? failureCode(returned) : null,
+        },
+      ])
+      return
+    }
+    if (ctx.path === "/revoke-session" || ctx.path === "/revoke-sessions" || ctx.path === "/revoke-other-sessions") {
+      const session = await getSessionFromCtx(ctx).catch(() => null)
+      if (!session) return
+      await recordAuditSafe(hookAudit(ctx, userActor(session.user)), [
+        {
+          action: "auth.session_revoke",
+          entityType: "session",
+          newValue: { scope: ctx.path.slice(1) },
+          result: failed ? "failure" : "success",
+          failureReason: failed ? failureCode(returned) : null,
+        },
+      ])
+    }
+  }),
+}
 
 assertServerEnv()
 
@@ -47,6 +137,24 @@ export const auth = betterAuth({
         },
       }
     : undefined,
+  hooks: authAuditHooks,
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          await recordAuditSafe(auditContext(new Headers(), SYSTEM_ACTOR, "auth/user.create"), [
+            {
+              action: "user.create",
+              entityType: "auth_user",
+              entityId: user.id,
+              entityLabel: user.email,
+              newValue: { email: user.email, appRole: (user as { appRole?: unknown }).appRole ?? null },
+            },
+          ])
+        },
+      },
+    },
+  },
   user: {
     additionalFields: {
       // This app's access level (SP, SUP, SOO, STO, TL, ADMIN).
