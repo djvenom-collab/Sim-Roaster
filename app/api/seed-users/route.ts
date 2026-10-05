@@ -3,10 +3,14 @@ import { db } from "@/lib/db"
 import { user } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { NextResponse } from "next/server"
+import { isDemoSeedEnabled } from "@/lib/security/env"
+import { isSameOriginRequest, jsonError } from "@/lib/security/authz"
+import { checkRateLimit, clientIp } from "@/lib/security/rate-limit"
 
 // One demo account per access level (1-6). All use the password "admin".
 // This is a convenience seeder for the demo; every account is created through
 // Better Auth so passwords are properly hashed, then tagged with its appRole.
+// Disabled in production unless ENABLE_DEMO_SEED=true.
 const SEED_ACCOUNTS: { email: string; name: string; role: string }[] = [
   { email: "sp@sim.local", name: "Sim Pilot", role: "SP" },
   { email: "sup@sim.local", name: "Supervisor", role: "SUP" },
@@ -18,7 +22,12 @@ const SEED_ACCOUNTS: { email: string; name: string; role: string }[] = [
 
 const PASSWORD = "admin"
 
-export async function POST() {
+export async function POST(request: Request) {
+  if (!isDemoSeedEnabled()) return jsonError(404, "not_found")
+  if (!isSameOriginRequest(request)) return jsonError(403, "forbidden")
+  const rl = checkRateLimit(`seed-users:${clientIp(request)}`, { limit: 5, windowSec: 60 })
+  if (!rl.allowed) return jsonError(429, "rate_limited", { "Retry-After": String(rl.retryAfterSec) })
+
   const results: { email: string; role: string; status: string }[] = []
 
   for (const acct of SEED_ACCOUNTS) {
@@ -46,7 +55,7 @@ export async function POST() {
         .where(eq(user.email, acct.email))
       results.push({ email: acct.email, role: acct.role, status: "created" })
     } catch (err) {
-      console.log("[v0] seed-users error for", acct.email, (err as Error).message)
+      console.error("[seed-users] error for", acct.email, (err as Error).message)
       results.push({ email: acct.email, role: acct.role, status: "error" })
     }
   }
@@ -54,7 +63,8 @@ export async function POST() {
   return NextResponse.json({ ok: true, results })
 }
 
-// Allow a GET as well so it can be triggered easily from the browser/dev.
-export async function GET() {
-  return POST()
+// GET is a dev-only convenience trigger.
+export async function GET(request: Request) {
+  if (process.env.NODE_ENV === "production") return jsonError(405, "method_not_allowed")
+  return POST(request)
 }

@@ -1,5 +1,7 @@
 import { put, get, list } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
+import { z } from "zod"
+import { authorize, jsonError } from "@/lib/security/authz"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -14,8 +16,13 @@ export interface BackupMeta {
   size: number      // bytes
 }
 
+const createSchema = z.object({ label: z.string().max(200).optional() })
+
 // GET /api/backup — list all backups, newest first.
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authz = await authorize(request, { anyPermission: ["page_backup"] })
+  if (!authz.ok) return authz.response
+
   try {
     const { blobs } = await list({ prefix: BACKUP_PREFIX, mode: "expanded" })
     const backups: BackupMeta[] = blobs
@@ -35,33 +42,40 @@ export async function GET() {
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
     return NextResponse.json({ backups }, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
-    console.error("[backup] list error:", error)
-    return NextResponse.json({ error: "list_failed" }, { status: 500 })
+    console.error("[backup] list error:", (error as Error).message)
+    return jsonError(500, "list_failed")
   }
 }
 
 // POST /api/backup — create a new named backup of the current live state.
 // Body: { label: string }
 export async function POST(request: NextRequest) {
+  const authz = await authorize(request, {
+    anyPermission: ["page_backup"],
+    rateLimit: { bucket: "backup-create", limit: 10, windowSec: 60 },
+  })
+  if (!authz.ok) return authz.response
+
   try {
-    const { label } = (await request.json()) as { label?: string }
-    const safeName = (label ?? "manual")
+    const parsed = createSchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) return jsonError(400, "invalid_label")
+    const safeName = (parsed.data.label ?? "manual")
       .trim()
       .slice(0, 60)
       .replace(/[^\w\s-]/g, "")
       .replace(/\s+/g, "_")
     if (!safeName) {
-      return NextResponse.json({ error: "invalid_label" }, { status: 400 })
+      return jsonError(400, "invalid_label")
     }
 
     // Read the live snapshot.
     const current = await get(STATE_PATH, { access: "private", useCache: false })
     if (!current || !current.stream) {
-      return NextResponse.json({ error: "no_live_state" }, { status: 404 })
+      return jsonError(404, "no_live_state")
     }
     const stateText = await new Response(current.stream).text()
     if (!stateText) {
-      return NextResponse.json({ error: "empty_live_state" }, { status: 404 })
+      return jsonError(404, "empty_live_state")
     }
 
     const ts = new Date().toISOString().replace(/[:.]/g, "-")
@@ -83,7 +97,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, backup }, { status: 201 })
   } catch (error) {
-    console.error("[backup] create error:", error)
-    return NextResponse.json({ error: "create_failed" }, { status: 500 })
+    console.error("[backup] create error:", (error as Error).message)
+    return jsonError(500, "create_failed")
   }
 }

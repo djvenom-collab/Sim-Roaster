@@ -1,5 +1,7 @@
 import { put, get } from "@vercel/blob"
 import { type NextRequest, NextResponse } from "next/server"
+import { authorize, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
+import { backupIdSchema } from "@/lib/security/validation"
 
 export const dynamic = "force-dynamic"
 
@@ -10,27 +12,35 @@ const STATE_PATH = "sim-roster/state.json"
 // Copies the backup blob content back over the live state.json so the next
 // store load (or browser refresh) picks up the restored snapshot.
 export async function POST(request: NextRequest) {
+  const authz = await authorize(request, {
+    anyPermission: ["page_backup"],
+    rateLimit: { bucket: "backup-restore", limit: 5, windowSec: 60 },
+  })
+  if (!authz.ok) return authz.response
+
   try {
-    const { id } = (await request.json()) as { id?: string }
-    if (!id || !id.startsWith("sim-roster/backups/") || !id.endsWith(".json")) {
-      return NextResponse.json({ error: "invalid_id" }, { status: 400 })
-    }
+    const parsed = backupIdSchema.safeParse(await request.json().catch(() => null))
+    if (!parsed.success) return jsonError(400, "invalid_id")
+    const { id } = parsed.data
 
     // Read the chosen backup blob.
     const backup = await get(id, { access: "private", useCache: false })
     if (!backup || !backup.stream) {
-      return NextResponse.json({ error: "backup_not_found" }, { status: 404 })
+      return jsonError(404, "backup_not_found")
     }
     const snapshotText = await new Response(backup.stream).text()
     if (!snapshotText) {
-      return NextResponse.json({ error: "empty_backup" }, { status: 404 })
+      return jsonError(404, "empty_backup")
     }
 
-    // Validate that it is parseable JSON before overwriting live state.
+    // Validate that it is a JSON object before overwriting live state.
     try {
-      JSON.parse(snapshotText)
+      const snapshot: unknown = JSON.parse(snapshotText)
+      if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+        return jsonError(422, "invalid_json")
+      }
     } catch {
-      return NextResponse.json({ error: "invalid_json" }, { status: 422 })
+      return jsonError(422, "invalid_json")
     }
 
     // Overwrite the live state with the backup content.
@@ -40,10 +50,12 @@ export async function POST(request: NextRequest) {
       contentType: "application/json",
       cacheControlMaxAge: 0,
     })
+    invalidatePermissionCache()
+    console.info(`[audit] backup restored id=${id} by user=${authz.ctx.userId}`)
 
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error("[backup] restore error:", error)
-    return NextResponse.json({ error: "restore_failed" }, { status: 500 })
+    console.error("[backup] restore error:", (error as Error).message)
+    return jsonError(500, "restore_failed")
   }
 }
