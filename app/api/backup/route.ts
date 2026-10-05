@@ -3,6 +3,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { authorize, jsonError } from "@/lib/security/authz"
 import { actorFromAuth, auditContext, recordAuditSafe } from "@/lib/audit/log"
+import { sha256Hex, writeManifest } from "@/lib/continuity/backup-manifest"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -87,6 +88,16 @@ export async function POST(request: NextRequest) {
       allowOverwrite: false,
       contentType: "application/json",
       cacheControlMaxAge: 0,
+    })
+
+    await writeManifest({
+      backupPath,
+      sha256: sha256Hex(stateText),
+      bytes: Buffer.byteLength(stateText),
+      kind: "manual",
+      createdAt: new Date().toISOString(),
+      sourceEtag: current.blob.etag ?? null,
+      verifiedAfterWrite: false,
     })
 
     const backup: BackupMeta = {
