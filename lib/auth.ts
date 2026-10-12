@@ -196,7 +196,9 @@ export const auth = betterAuth({
     window: 60,
     max: 100,
     customRules: {
-      "/sign-in/email": { window: 60, max: 5 },
+      // Keyed per client IP, so users behind a shared proxy or office NAT share
+      // one budget. Dev previews get more headroom for repeated role switching.
+      "/sign-in/email": { window: 60, max: isProduction ? 10 : 30 },
       "/sign-up/email": { window: 60, max: 3 },
       "/sign-in/social": { window: 60, max: 10 },
       "/change-password": { window: 60, max: 5 },

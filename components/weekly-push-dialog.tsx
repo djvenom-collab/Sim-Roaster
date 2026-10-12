@@ -61,13 +61,16 @@ export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) 
   const weekEndISO = toISO(addDays(parseISO(weekStart), 4))
 
   // Build a weekly context for every active staff member.
+  // Only built while the dialog is open: this scans every run for every staff
+  // member and was costing ~0.8 s on each Dashboard render while closed.
   const rows = useMemo(() => {
+    if (!open || !canPush) return []
     return store.staff
       .filter((s) => s.active)
       .map((s) => buildWeekContext(s.id, weekStart))
       .filter((c): c is NonNullable<typeof c> => !!c)
       .sort((a, b) => b.items.length - a.items.length || a.staff.lastName.localeCompare(b.staff.lastName))
-  }, [store.staff, buildWeekContext, weekStart])
+  }, [open, canPush, store.staff, buildWeekContext, weekStart])
 
   // A digest is worth sending if the person has seating, training, or any
   // currency that is expiring/expired in the snapshot.
