@@ -54,16 +54,30 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((parseISO(b).getTime() - parseISO(a).getTime()) / 86400000)
 }
 
+// toLocaleDateString builds a new Intl formatter on every call, which is slow
+// when tables render thousands of dates. Reuse one formatter per format and
+// memoize results, since the same ISO dates repeat across rows.
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+const SHORT_FMT = new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short" })
+const dateCache = new Map<string, string>()
+const shortCache = new Map<string, string>()
+
+function cachedFormat(cache: Map<string, string>, fmt: Intl.DateTimeFormat, s: string): string {
+  let out = cache.get(s)
+  if (out === undefined) {
+    out = fmt.format(parseISO(s))
+    if (cache.size > 5000) cache.clear()
+    cache.set(s, out)
+  }
+  return out
+}
+
 export function formatDate(s: string): string {
-  return parseISO(s).toLocaleDateString("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  })
+  return cachedFormat(dateCache, DATE_FMT, s)
 }
 
 export function formatShort(s: string): string {
-  return parseISO(s).toLocaleDateString("en-GB", { day: "2-digit", month: "short" })
+  return cachedFormat(shortCache, SHORT_FMT, s)
 }
 
 // Simple "week of year" (1–53): which 7-day block of its calendar year the

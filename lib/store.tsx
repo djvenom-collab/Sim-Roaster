@@ -1128,15 +1128,47 @@ export function StoreProvider({
     return { ...c, lastDateSat: v.lastDateSat }
   }, [validityMap])
 
-  const isOnLeave = useCallback((staffId: string, date: string) =>
-    leaveRecords.find(
-      (l) => l.staffId === staffId && l.approval !== "rejected" && date >= l.startDate && date <= l.endDate,
-    ), [leaveRecords])
+  // These lookups run once per staff/day cell on the roster, Gantt and
+  // Dashboard views, so index them up front instead of scanning every record
+  // per call. Iteration order is preserved so results match the old `.find`.
+  const leaveByStaff = useMemo(() => {
+    const m = new Map<string, LeaveRecord[]>()
+    for (const l of leaveRecords) {
+      if (l.approval === "rejected") continue
+      const list = m.get(l.staffId)
+      if (list) list.push(l)
+      else m.set(l.staffId, [l])
+    }
+    return m
+  }, [leaveRecords])
 
-  const isInTraining = useCallback((staffId: string, date: string) => {
-    const sessionIds = trainingAttendance.filter((a) => a.staffId === staffId).map((a) => a.sessionId)
-    return trainingSessions.find((t) => sessionIds.includes(t.id) && t.date === date)
+  const isOnLeave = useCallback(
+    (staffId: string, date: string) =>
+      leaveByStaff.get(staffId)?.find((l) => date >= l.startDate && date <= l.endDate),
+    [leaveByStaff],
+  )
+
+  const trainingByStaffDate = useMemo(() => {
+    const attendeesBySession = new Map<string, string[]>()
+    for (const a of trainingAttendance) {
+      const list = attendeesBySession.get(a.sessionId)
+      if (list) list.push(a.staffId)
+      else attendeesBySession.set(a.sessionId, [a.staffId])
+    }
+    const m = new Map<string, (typeof trainingSessions)[number]>()
+    for (const t of trainingSessions) {
+      for (const staffId of attendeesBySession.get(t.id) ?? []) {
+        const key = `${staffId}|${t.date}`
+        if (!m.has(key)) m.set(key, t)
+      }
+    }
+    return m
   }, [trainingAttendance, trainingSessions])
+
+  const isInTraining = useCallback(
+    (staffId: string, date: string) => trainingByStaffDate.get(`${staffId}|${date}`),
+    [trainingByStaffDate],
+  )
 
   const otherTaskOn = useCallback(
     (staffId: string, date: string) =>
