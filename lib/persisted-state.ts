@@ -100,7 +100,14 @@ import type { Permission } from "./permissions"
 //     snapshot before the reworked sample-data generator had finished compiling,
 //     so it persisted the old sparse logs under v8. Bumping again re-runs the
 //     same reseed against the now-stable seed module.
-export const SNAPSHOT_VERSION = 9
+// v10: validation-coverage pass — ~75% of staff are now operational on ≥80% of
+//     their department's positions with current currency, and have every OJT
+//     pool validated. The reseed replaces runs/currency/training logs, and the
+//     migration refreshes each seeded staff member's homePositions to match
+//     (other staff edits are preserved).
+// v11: 4x the currency-warning counts (expired 2→8, expiring 3→12). The reseed
+//     replaces runs/assignments/currency so the dashboard shows the new counts.
+export const SNAPSHOT_VERSION = 11
 
 export interface PersistedState {
   version: number

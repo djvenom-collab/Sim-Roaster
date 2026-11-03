@@ -1,44 +1,16 @@
-# Autonoma SDK Integration — Implementation Checklist
+# Autonoma integration — implementation checklist
 
-Test-data endpoint that lets the Autonoma test runner `discover`, seed (`up`),
-and tear down (`down`) the "standard" scenario for Sim Roaster.
+Endpoint: `POST /api/autonoma` (HMAC-signed; excluded from the auth middleware).
+Recipe: `/home/vercel-sandbox/.autonoma/v0-project/recipe.json` (scenario: `standard`).
 
-## Architecture
+## Where each model is written
+- **Auth models** (`User`, `Session`, `Account`, `Verification`) → real Better Auth +
+  Neon rows (`lib/autonoma/auth.ts`, `lib/db`). Gives the runner a real login.
+- **Everything else** → a slice of the app's per-run Blob snapshot
+  (`lib/autonoma/run-store.ts`). The store applies it VERBATIM via the
+  `__autonoma` marker (`lib/store.tsx`), so no migration/dedupe/backfill runs.
 
-This app stores data in **two** backends, so seeding spans both:
-
-1. **Auth entities** (`User`, `Session`, `Account`, `Verification`) are real
-   Postgres rows in the Better Auth tables. The `User` factory runs Better
-   Auth's own `signUpEmail`, so every seeded credential account is hashed
-   exactly like a real one — the returned credentials actually log in.
-2. **Domain entities** (`Staff`, `Simulator`, `Run`, logs, …) live only in the
-   single Vercel Blob snapshot at `sim-roster/state.json`. Their factories shape
-   the row; the handler's `afterUp` flushes them all into the snapshot in one
-   write, and `beforeDown` removes them by run tag.
-
-### Files
-- `app/api/autonoma/route.ts` — `POST /api/autonoma`; production-guarded; HMAC verified by the SDK.
-- `lib/autonoma/config.ts` — `HandlerConfig`: factories, `afterUp`, `beforeDown`, `auth`.
-- `lib/autonoma/factories.ts` — one factory per entity; seed-time offset resolution.
-- `lib/autonoma/snapshot.ts` — blob read/merge/remove keyed by `__autonomaRunId`.
-- `proxy.ts` — `/api/autonoma` exempted from the session gate (guarded by its own HMAC).
-- Recipe file: `/home/vercel-sandbox/.autonoma/v0-project/recipe.json` (33 entities, 174 records).
-- Maintenance note appended to `AGENTS.md` ("Autonoma test data" section).
-
-### Time handling
-The recipe never hardcodes an instant. Fields compared against "now" are passed
-as `<field>OffsetDays` / `<field>OffsetHours`; the factory (which runs at seed
-time) converts them to concrete values. There is no time token — by design.
-
-### Per-run uniqueness (survives overlapping runs)
-- Postgres `user.email` UNIQUE → tokenized with `{{testRunId}}`.
-- Session `token`, Account `accountId` → `{{testRunShortId}}`.
-- Domain codes (`Position.code`, `Simulator.code`, `Exercise.code`,
-  `Course.code`, `Qualification.code`, `Assignment.code`) → `{{testRunShortId}}`
-  so a human reading the blob can tell runs apart; blob rows also get fresh
-  UUIDs, so they never collide regardless.
-
-## Entity factories (from the entity audit)
+## Factories (one per entity the audit lists) — 33 total
 - [x] User
 - [x] Session
 - [x] Account
@@ -48,7 +20,6 @@ time) converts them to concrete values. There is no time token — by design.
 - [x] Position
 - [x] Exercise
 - [x] Course
-- [x] RunStatus (pure enum — no persistence)
 - [x] Run
 - [x] RunAssignment
 - [x] StaffValidity
@@ -72,46 +43,42 @@ time) converts them to concrete values. There is no time token — by design.
 - [x] AdminLog
 - [x] ImportHistory
 - [x] NotificationRecord
+- [x] TrainingGroup
 
-## Delivery checklist
-- [x] Endpoint implemented and production-guarded.
-- [x] Teardown removes exactly this run's rows (Postgres cascade + blob run tag).
-- [x] Auth callback returns real, usable credentials (login verified → HTTP 200 + session).
-- [x] Maintenance note (this file).
-- [x] Full-recipe `up` succeeds; all rows created (6 PG users + 2 sessions + 159 blob rows), then `down` removes them all (verified: 0 tagged rows, 0 test users/sessions).
-- [x] Time-sensitive fields land on the intended side of "now" (runs: 5 past / 3 future; future + past leave; session expiry in the future).
-- [x] Auth callback returns real, usable credentials — verified a live `POST /api/auth/sign-in/email` login returns HTTP 200 for a seeded user.
-- [x] Concurrent-instances proof (`--repeat 3`) → `ok: true`, all three live at once, then torn down to a clean slate.
-- [x] Clean `sdk check` on `recipe.json` → `ok: true`, 0 problems.
-- [x] Wrong signature rejected → HTTP 401 (`INVALID_SIGNATURE`).
-- [x] Pushed branch + opened pull request.
+## Infrastructure
+- [x] Endpoint (`app/api/autonoma/route.ts`, `createHandler` from `@autonoma-ai/server-web`)
+- [x] Middleware exclusion for `/api/autonoma`
+- [x] Teardown — scope-root: `deleteRunSnapshot(testRunId)` drops the whole per-run
+      blob in one call; auth rows are deleted per-User (cascades Session/Account).
+- [x] Auth callback — real email+password login for the seeded Admin user, returns
+      session cookies + sets the `autonoma_run` cookie so `/api/state` serves the run.
+- [x] Maintenance note appended to `AGENTS.md`
+- [x] `AUTONOMA_SIGNING_SECRET` provisioned (Production/Preview/Development) + `.env`
 
-## Known limitation
-The blob snapshot is one global document, so two overlapping `up`/`down` calls
-read-modify-write the same file. `mergeRecords`/`removeRecords` re-read
-immediately before writing to minimize clobbering, but this is best-effort. The
-`--repeat 3` proof passes because each run tags and removes only its own rows.
+## Validation
+- [x] Full-recipe `sdk up` → all 33 models / 118 records present in `/api/state`
+      (staff 5, runs 5, users 3, leave 3, training 2, logs, …) → `sdk down` → gone
+- [x] Per-run isolation verified: two parallel runs (`conc-x`/`conc-y`) each serve
+      only their own data + their own tokenised users
+- [x] Wrong-signature rejected — unsigned `POST /api/autonoma` returns 401
+- [x] Auth payload carries real credentials (real Better Auth login; browser
+      login as the seeded Admin renders the seeded dashboard)
+- [x] Time-sensitive rows land on the intended side of `now` (relative offsets
+      resolved in `lib/autonoma/dates.ts`)
+- [x] `sdk check` on `recipe.json` prints `"ok": true` (0 problems)
+- [x] Concurrent-instances proof (`sdk up --repeat 3`) → `ok: true`, all 3 up,
+      teardown complete (0 test users left; 6 real users preserved)
+- [x] Production `next build` passes with `/api/autonoma` compiled
+- [x] Branch pushed + pull request opened
 
-## Re-validation (fresh planner run)
-The integration code (endpoint, factories, config, snapshot, generator, and the
-AGENTS.md maintenance note) was already merged to `main` by an earlier session,
-so this run added no new integration code. It regenerated `recipe.json` from the
-current scenario and re-validated the live endpoint end to end:
-- `node scripts/autonoma/gen-recipe.mjs` → 33 entities, 174 records.
-- `sdk check` on `recipe.json` → `ok: true`, 0 problems.
-- Full `sdk up` (timeout 240s) → `ok: true`; verified in Postgres: 6 `user`
-  rows (correct `appRole`, `emailVerified = true`), 6 `account`, 9 `session`.
-- Live login `POST /api/auth/sign-in/email` for a seeded user → HTTP 200
-  (auth callback returns real, usable credentials).
-- `sdk down` → rows gone (0 users / 0 sessions for the run tag).
-- Wrong `x-signature` → HTTP 401 (SDK rejects).
-- Concurrency proof `sdk up --repeat 3` (timeout 300s) → `ok: true`, all three
-  instances live at once, all torn down; 0 leftover `cli-*@simops.test` rows.
+## Browser-verified
+Logged in as the seeded Admin with the `autonoma_run` cookie: Admin ▸ Users shows
+the 3 seeded users; the dashboard shows the seeded runs (RAD01 3/3 Confirmed,
+TWR01 1/2 Tentative) and On-Leave-Today 1 — all from the isolated per-run blob.
 
-## Maintenance
-When a new domain entity is added to the app:
-1. Add a factory in `lib/autonoma/factories.ts`.
-2. Map its model name → PersistedState slice in `SLICE_FOR_MODEL`.
-3. Add its records (with `_alias`/`_ref` wiring) to the recipe generator
-   `scripts/autonoma/gen-recipe.mjs`, regenerate with
-   `node scripts/autonoma/gen-recipe.mjs`, and run `sdk check`.
+## Concurrency design
+- Blob domain data is isolated per run by the `testRunId` blob path, so hardcoded
+  scenario ids (`pos-arr`, `sim-radar-1`, …) never collide across runs.
+- The shared Neon auth table is the only cross-run surface: `User.email` carries
+  `{{testRunId}}` and ids carry `{{testRunShortId}}`; Session/Account link to the
+  User via `_ref` (Better Auth mints the real user id at signup).

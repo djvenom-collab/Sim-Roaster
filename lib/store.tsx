@@ -466,7 +466,56 @@ export function StoreProvider({
         if (cancelled) return
         revisionRef.current = json?.revision ?? null
         const snap = json?.state
-        if (snap && typeof snap === "object") {
+        if (snap && (snap as { __autonoma?: boolean }).__autonoma === true) {
+          // ── AUTONOMA test-run snapshot ────────────────────────────────────
+          // An isolated per-run snapshot (lib/autonoma/run-store.ts). Apply it
+          // VERBATIM: no dedupe / version-reseed / history-backfill, which would
+          // otherwise inject demo + multi-year data and bury the clean scenario.
+          // Reference/config slices are pre-seeded into the run blob, so "apply
+          // if present, else keep seed default" gives seed + factory additions.
+          // Transactional slices apply if present, else reset EMPTY so a run
+          // shows exactly what its factories seeded (a clean slate).
+          const arr = <T,>(v: unknown): T[] | null => (Array.isArray(v) ? (v as T[]) : null)
+          // reference / config (keep the seed default when absent)
+          if (arr(snap.positions)) setPositionsData(snap.positions!)
+          if (arr(snap.simulators)) setSimulatorsData(snap.simulators!)
+          if (arr(snap.exercises)) setExercisesData(snap.exercises!)
+          if (arr(snap.courses)) setCoursesData(snap.courses!)
+          if (snap.courseSimClass && typeof snap.courseSimClass === "object")
+            setCourseSimClassState(snap.courseSimClass)
+          if (arr(snap.exerciseQualRules)) setExerciseQualRulesData(snap.exerciseQualRules!)
+          if (arr(snap.qualifications)) setQualificationsData(snap.qualifications!)
+          if (arr(snap.slotTimes)) setSlotTimesData(snap.slotTimes!)
+          if (arr(snap.publicHolidays)) setPublicHolidaysData(snap.publicHolidays!)
+          if (arr(snap.trainingGroups)) setTrainingGroupsData(snap.trainingGroups!)
+          if (snap.permissionMatrix && typeof snap.permissionMatrix === "object") {
+            const reconciled = reconcilePermissionMatrix(snap.permissionMatrix)
+            setPermissionMatrixState(reconciled)
+            setPermissionMatrix(reconciled)
+          }
+          // transactional / entity (empty when absent — clean per-run slate)
+          setStaffData(arr<Staff>(snap.staff) ?? [])
+          setUsers(arr<User>(snap.users) ?? [])
+          setAssignmentsData(arr<Assignment>(snap.assignments) ?? [])
+          setStaffQualificationsData(arr<StaffQualification>(snap.staffQualifications) ?? [])
+          setRuns(arr<Run>(snap.runs) ?? [])
+          setRunAssignments(arr<RunAssignment>(snap.runAssignments) ?? [])
+          setLeaveRecords(arr<LeaveRecord>(snap.leaveRecords) ?? [])
+          setOtherTasksData(arr<OtherTask>(snap.otherTasks) ?? [])
+          setTrainingSessions(arr<TrainingSession>(snap.trainingSessions) ?? [])
+          setTrainingAttendance(arr<TrainingAttendance>(snap.trainingAttendance) ?? [])
+          setTrainingLogs(arr<TrainingLogEntry>(snap.trainingLogs) ?? [])
+          setStaffValidity(arr<StaffValidity>(snap.staffValidity) ?? [])
+          setAuditLogs(arr<AuditLog>(snap.auditLogs) ?? [])
+          setImportHistory(arr(snap.importHistory) ?? [])
+          setNotifications(arr<NotificationRecord>(snap.notifications) ?? [])
+          setFaultLogs(arr<FaultLog>(snap.faultLogs) ?? [])
+          setOperatorLogs(arr<OperatorLog>(snap.operatorLogs) ?? [])
+          setFirewallLogs(arr<FirewallLog>(snap.firewallLogs) ?? [])
+          setAdminLogs(arr<AdminLog>(snap.adminLogs) ?? [])
+          if (snap.notifyDirty && typeof snap.notifyDirty === "object") setNotifyDirty(snap.notifyDirty)
+          canSaveRef.current = true
+        } else if (snap && typeof snap === "object") {
           // Apply each slice only if present, so newly-added slices in a later
           // version simply fall back to the seed instead of wiping anything.
           if (Array.isArray(snap.staff) && snap.staff.length) setStaffData(snap.staff)
@@ -565,6 +614,17 @@ export function StoreProvider({
             // override the snapshot values applied above and below.
             setTrainingLogs(rs.trainingLogs)
             setStaffQualificationsData(rs.staffQualifications)
+            // v10: the reseeded runs only seat people on their SEEDED home
+            // positions, so refresh homePositions for seeded staff (matched by
+            // id) to keep currency consistent. All other staff fields and any
+            // staff added by an admin are left untouched.
+            const seedHomeById = new Map(seed.staff.map((s) => [s.id, s.homePositions]))
+            setStaffData((prev) =>
+              prev.map((s) => {
+                const home = seedHomeById.get(s.id)
+                return home ? { ...s, homePositions: [...home] } : s
+              }),
+            )
             // v7: the SOO/STO roles were added along with a couple of seeded
             // users for each. Users are otherwise preserved across versions, so
             // MERGE IN only the seeded users that a pre-v7 snapshot is missing
@@ -634,7 +694,7 @@ export function StoreProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Durable snapshot: SAVE ────────────────────────────────────────────────
+  // ── Durable snapshot: SAVE ───────��────────────────────────────────────────
   // Any change to any persisted slice schedules a debounced write of the WHOLE
   // snapshot to Blob. Because every mutation already flows through these state
   // setters, this single effect captures every edit on every page — no per-page
@@ -1412,7 +1472,7 @@ export function StoreProvider({
         if (a.staffId) dayLoad.set(a.staffId, (dayLoad.get(a.staffId) ?? 0) + 1)
       })
 
-      // ── Rotation history (built from the EXISTING schedule) ───────────────
+      // ��─ Rotation history (built from the EXISTING schedule) ───────────────
       // These maps drive the rotation rule so people cycle through the
       // positions they are validated for instead of getting stuck on one:
       //   • posCount   — how many times a person has sat a given position, so

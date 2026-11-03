@@ -230,14 +230,19 @@ const radarPositionPool = positions.filter((p) => p.program === "RADAR")
 // covered positions stable across reloads and between server/client renders.
 const staffRng = makeRng(91051)
 
+// CHANGEABLE: the "fully validated" cohort — 3 in every 4 staff (~75%). These
+// people hold ≥80% of their department's positions with current currency and
+// have every OJT position pool validated; everyone else is still building up.
+const isValidatedCohort = (staffIndex: number) => staffIndex % 4 !== 3
+
 export const staff: Staff[] = roster.map(([name, code, role], i) => {
   const parts = name.trim().split(/\s+/)
   const fn = parts[0]
   const ln = parts.slice(1).join(" ")
 
   // Split the roster down the middle: the first half work TOWER, the second
-  // half work RADAR. Each person is operational on MOST of their department's
-  // positions (a random 70–100% subset), so the department is well covered.
+  // half work RADAR. The validated cohort is operational on 85–100% of their
+  // department's positions; the rest on a 60–75% subset (still progressing).
   const program: "TOWER" | "RADAR" = i < Math.ceil(roster.length / 2) ? "TOWER" : "RADAR"
   const pool = program === "TOWER" ? towerPositionPool : radarPositionPool
 
@@ -247,8 +252,10 @@ export const staff: Staff[] = roster.map(([name, code, role], i) => {
     const r = Math.floor(staffRng() * (j + 1))
     ;[shuffled[j], shuffled[r]] = [shuffled[r], shuffled[j]]
   }
-  const minCount = Math.max(1, Math.ceil(pool.length * 0.7))
-  const count = minCount + Math.floor(staffRng() * (pool.length - minCount + 1))
+  const validated = isValidatedCohort(i)
+  const minCount = Math.max(1, Math.ceil(pool.length * (validated ? 0.85 : 0.6)))
+  const maxCount = validated ? pool.length : Math.max(minCount, Math.ceil(pool.length * 0.8) - 1)
+  const count = minCount + Math.floor(staffRng() * (maxCount - minCount + 1))
   const homePositions = Array.from(new Set(shuffled.slice(0, count).map((p) => p.id)))
 
   return {
@@ -551,7 +558,7 @@ export const exerciseQualRules: ExerciseQualRule[] = [
 // NOTE: a completed run refreshes currency, so the numbers here are only a
 // starting point — the authoritative team-wide caps are enforced by the
 // normalization pass AFTER run assignments are seeded (see further below).
-const MAX_EXPIRED = 2 // CHANGEABLE: how many "expired currency" records to seed across everyone
+const MAX_EXPIRED = 8 // CHANGEABLE: how many "expired currency" records to seed across everyone
 let expiredBudget = MAX_EXPIRED
 export const staffValidity: StaffValidity[] = []
 staff.forEach((s, si) => {
@@ -785,8 +792,9 @@ export const trainingLogs: TrainingLogEntry[] = []
 
   // ── Complete trainee coverage ────────────────────────────────────────────
   // Every non-OJTI staff member is a trainee and must show accumulated hours on
-  // EVERY position group of their program. ~1 in 4 groups is fully validated
-  // (≥40h, occasionally an approved extension); the rest are still in progress,
+  // EVERY position group of their program. The validated cohort (~75% of staff)
+  // has every group fully validated (≥40h, occasionally an approved extension);
+  // everyone else has ~1 in 4 groups validated and the rest still in progress,
   // so the staff page and the OJTI tab both show a realistic mix.
   let logSeq = 1
   const trainees = staff.filter((s) => !ojtiStaffIds.has(s.id))
@@ -795,10 +803,12 @@ export const trainingLogs: TrainingLogEntry[] = []
     const ojtis = ojtiByProgram[program]
     if (ojtis.length === 0) continue
     const groups = TRAINING_GROUPS.filter((g) => g.program === program)
+    const fullyValidated = isValidatedCohort(staff.indexOf(trainee))
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi]
       const rng = makeRng(hashSeed(`${trainee.id}:${group.id}`))
-      const completed = rng() < 0.25
+      const roll = rng()
+      const completed = fullyValidated || roll < 0.25
       const target = completed
         ? GROUP_CAP + Math.round(rng() * 12) // 40–52h (may include an approved extension)
         : Math.round((4 + rng() * 32) * 2) / 2 // 4–36h in 0.5h steps (in progress)
@@ -1196,8 +1206,8 @@ export const runAssignments: RunAssignment[] = []
 // exact same records are shown every reload. Valid/never records are untouched,
 // so the vast majority of profiles still show their real last-sat date.
 {
-  const TARGET_EXPIRED = 2 // CHANGEABLE: expired-currency records team-wide (kept minimal)
-  const TARGET_EXPIRING = 3 // CHANGEABLE: expiring-soon records team-wide (kept minimal)
+  const TARGET_EXPIRED = 8 // CHANGEABLE: expired-currency records team-wide
+  const TARGET_EXPIRING = 12 // CHANGEABLE: expiring-soon records team-wide
   let keepExpired = TARGET_EXPIRED
   let keepExpiring = TARGET_EXPIRING
   const ordered = [...staffValidity].sort((a, b) =>
@@ -1231,8 +1241,8 @@ export const runAssignments: RunAssignment[] = []
 // leaving only a small handful of alerts for realism. Deterministic (stable
 // sort), so the same records show every reload.
 {
-  const KEEP_EXPIRED = 2 // CHANGEABLE: expired alerts left on the live dashboard
-  const KEEP_EXPIRING = 3 // CHANGEABLE: expiring alerts left on the live dashboard
+  const KEEP_EXPIRED = 8 // CHANGEABLE: expired alerts left on the live dashboard
+  const KEEP_EXPIRING = 12 // CHANGEABLE: expiring alerts left on the live dashboard
   const staffByIdMap = new Map(staff.map((s) => [s.id, s]))
   const posByIdMap = new Map(positions.map((p) => [p.id, p]))
   const runByIdMap = new Map(runs.map((r) => [r.id, r]))
@@ -1261,6 +1271,12 @@ export const runAssignments: RunAssignment[] = []
   // run dated a few days ago (well inside every validity window → reads valid).
   let keepE = KEEP_EXPIRED
   let keepG = KEEP_EXPIRING
+  // If fewer records lapse into "expiring" naturally than KEEP_EXPIRING asks
+  // for, date that many refresh runs so they land inside the warning window.
+  let expiringShortfall = Math.max(
+    0,
+    KEEP_EXPIRING - lapsing.filter((l) => l.status === "expiring").length,
+  )
   let topupSeq = 1
   for (const { staffId, posId, status } of lapsing) {
     if (status === "expired" && keepE > 0) {
@@ -1277,7 +1293,12 @@ export const runAssignments: RunAssignment[] = []
       exercises.find((e) => e.program === program && e.requiredPositions.includes(posId)) ??
       exercises.find((e) => e.program === program) ??
       exercises[0]
-    const date = addDaysISO(T, -(5 + (topupSeq % 10))) // 5–14 days ago, spread out
+    let date = addDaysISO(T, -(5 + (topupSeq % 10))) // 5–14 days ago, spread out
+    const vd = posByIdMap.get(posId)!.validityDays
+    if (expiringShortfall > 0 && vd > 14) {
+      expiringShortfall--
+      date = addDaysISO(T, -(vd - 7)) // 7 days of currency left → expiring
+    }
     const runId = datedId("run", date, 900000 + topupSeq)
     runs.push({
       id: runId,

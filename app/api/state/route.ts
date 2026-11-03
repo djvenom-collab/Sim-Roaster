@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { get, put } from "@vercel/blob"
 import { authorize, hasPermission, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
 import { reconcilePermissionMatrix, type Permission } from "@/lib/permissions"
 import { ConcurrencyConflictError, stateRepository, type Snapshot } from "@/lib/repository/state-repository"
@@ -12,6 +13,8 @@ import {
   type AuditEventInput,
 } from "@/lib/audit/log"
 import { diffSnapshots } from "@/lib/audit/diff"
+import { SNAPSHOT_VERSION } from "@/lib/persisted-state"
+import { RUN_COOKIE, AUTONOMA_MARKER, runSnapshotPath } from "@/lib/autonoma/run-store"
 
 const STATE_ENTITY_ID = "sim-roster/state.json"
 
@@ -19,6 +22,11 @@ const STATE_ENTITY_ID = "sim-roster/state.json"
 // GET returns it with a revision (ETag). PUT requires If-Match with that
 // revision once a snapshot exists: a stale revision means another session wrote
 // in between, so the write is rejected with 409 instead of silently erasing it.
+//
+// AUTONOMA ISOLATION: when a request carries the `autonoma_run` cookie (set by
+// the Autonoma factory's auth callback), reads and autosaves are redirected to
+// that test run's PER-RUN blob instead, so a test run never touches the real
+// snapshot. The caller must still pass the normal session + rate-limit checks.
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024
 
@@ -33,11 +41,36 @@ const PROTECTED_SLICES: Record<string, Permission> = {
 export const dynamic = "force-dynamic"
 export const revalidate = 0
 
+function runPathFor(request: NextRequest): string | null {
+  const runId = request.cookies.get(RUN_COOKIE)?.value
+  return runId ? runSnapshotPath(runId) : null
+}
+
+async function readRunSnapshot(pathname: string) {
+  const result = await get(pathname, { access: "private", useCache: false })
+  if (!result || result.statusCode === 304 || !result.stream) return null
+  const text = await new Response(result.stream).text()
+  const state = text ? JSON.parse(text) : null
+  // Re-assert the verbatim marker + version so the store applies the seeded
+  // slices as-is, even after the app's own autosave rewrote the per-run blob.
+  if (state && typeof state === "object") {
+    state[AUTONOMA_MARKER] = true
+    state.version = SNAPSHOT_VERSION
+  }
+  return state
+}
+
 export async function GET(request: NextRequest) {
   const authz = await authorize(request, { rateLimit: { bucket: "state-read", limit: 120, windowSec: 60 } })
   if (!authz.ok) return authz.response
 
   try {
+    const runPath = runPathFor(request)
+    if (runPath) {
+      const state = await readRunSnapshot(runPath)
+      return NextResponse.json({ state, revision: null }, { headers: { "Cache-Control": "no-store" } })
+    }
+
     const { state, revision } = await stateRepository.read()
     const headers: Record<string, string> = { "Cache-Control": "no-store" }
     if (revision) headers.ETag = revision
@@ -57,9 +90,10 @@ export async function PUT(request: NextRequest) {
   const declaredLength = Number(request.headers.get("content-length") ?? 0)
   if (declaredLength > MAX_BODY_BYTES) return jsonError(413, "payload_too_large")
 
+  let body: string
   let incoming: Snapshot
   try {
-    const body = await request.text()
+    body = await request.text()
     if (!body) return jsonError(400, "empty_body")
     if (body.length > MAX_BODY_BYTES) return jsonError(413, "payload_too_large")
     const parsed: unknown = JSON.parse(body)
@@ -67,6 +101,24 @@ export async function PUT(request: NextRequest) {
     incoming = parsed as Snapshot
   } catch {
     return jsonError(400, "invalid_json")
+  }
+
+  // Test-run autosaves go to the isolated per-run blob; the shared snapshot,
+  // its revision chain, and its audit trail are never touched.
+  const runPath = runPathFor(request)
+  if (runPath) {
+    try {
+      await put(runPath, body, {
+        access: "private",
+        allowOverwrite: true,
+        contentType: "application/json",
+        cacheControlMaxAge: 0,
+      })
+      return NextResponse.json({ ok: true, revision: null })
+    } catch (error) {
+      console.error("[state] PUT (autonoma run) error:", (error as Error).message)
+      return jsonError(500, "write_failed")
+    }
   }
 
   const expectedRevision = request.headers.get("if-match")
