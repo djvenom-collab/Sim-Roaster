@@ -287,6 +287,42 @@ export function useNotify() {
     [deliverInApp],
   )
 
+  // "Push to all": builds every digest first, then records them in a single
+  // state update so the app re-renders once instead of once per recipient.
+  const sendWeeklyEmails = useCallback(
+    (ctxs: WeeklyContext[]) => {
+      const accountByStaff = new Map(
+        store.users.filter((u) => u.active && u.staffId).map((u) => [u.staffId as string, u]),
+      )
+      let ok = 0
+      let fail = 0
+      let noAccount = 0
+      const records: Parameters<typeof store.recordNotifications>[0] = []
+      for (const ctx of ctxs) {
+        try {
+          const msg = buildWeeklyMessage(ctx)
+          const account = accountByStaff.get(ctx.staff.id)
+          if (!account) noAccount++
+          records.push({
+            staffId: ctx.staff.id,
+            channel: "in_app",
+            kind: "weekly",
+            subject: msg.subject,
+            body: msg.body,
+            to: account ? `${account.name} (in-app inbox)` : "In-app inbox",
+            simulated: false,
+          })
+          ok++
+        } catch {
+          fail++
+        }
+      }
+      store.recordNotifications(records)
+      return { ok, fail, noAccount }
+    },
+    [store],
+  )
+
   // Record a copy-to-clipboard hand-off so it shows in the viewer.
   const recordHandoff = useCallback(
     (args: {
@@ -308,6 +344,7 @@ export function useNotify() {
     buildDailyContext,
     sendEmail,
     sendWeeklyEmail,
+    sendWeeklyEmails,
     sendDailyEmail,
     sendCustomEmail,
     recordHandoff,

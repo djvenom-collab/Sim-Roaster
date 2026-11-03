@@ -50,7 +50,7 @@ function sendDateFor(weekStartISO: string): string {
 
 export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) {
   const store = useStore()
-  const { buildWeekContext, sendWeeklyEmail } = useNotify()
+  const { buildWeekContext, sendWeeklyEmail, sendWeeklyEmails } = useNotify()
   const [open, setOpen] = useState(false)
   // Pushing weekly schedules is restricted to SUP and above via the matrix.
   const canPush = can(store.currentRole, "push_notifications")
@@ -90,30 +90,36 @@ export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) 
   // needsNotify() still re-flags anything edited AFTER this stamp, because it
   // compares the change time against this notifiedAt time.
   const markWeeklyNotified = (ctx: (typeof rows)[number]) => {
-    ctx.items.forEach((it) => store.markNotified(`run:${it.runId}`))
-    ctx.trainings.forEach((t) => store.markNotified(`training:${t.sessionId}`))
+    store.markNotifiedMany([
+      ...ctx.items.map((it) => `run:${it.runId}`),
+      ...ctx.trainings.map((t) => `training:${t.sessionId}`),
+    ])
   }
 
   // Hidden entirely for roles without the push permission (SP / Level 1).
   if (!canPush) return null
 
+  // One batched write for everyone. Sending in a loop used to trigger a full
+  // app re-render (and a rebuild of every digest) per recipient, which froze
+  // and crashed the tab on large rosters.
   const handleSendAll = async () => {
     setSending(true)
-    let ok = 0
-    let fail = 0
-    let noAccount = 0
-    for (const ctx of sendable) {
-      try {
-        const res = await sendWeeklyEmail(ctx)
-        if (!res.hasAccount) noAccount++
-        markWeeklyNotified(ctx)
-        ok++
-      } catch {
-        fail++
-      }
+    // Let the spinner paint before the synchronous message build.
+    await new Promise((r) => setTimeout(r, 0))
+    try {
+      const { ok, fail, noAccount } = sendWeeklyEmails(sendable)
+      store.markNotifiedMany(
+        sendable.flatMap((ctx) => [
+          ...ctx.items.map((it) => `run:${it.runId}`),
+          ...ctx.trainings.map((t) => `training:${t.sessionId}`),
+        ]),
+      )
+      bulkDeliveryToast(ok, fail, noAccount, "weekly digest")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to push weekly digests")
+    } finally {
+      setSending(false)
     }
-    setSending(false)
-    bulkDeliveryToast(ok, fail, noAccount, "weekly digest")
   }
 
   return (
