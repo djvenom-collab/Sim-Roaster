@@ -230,14 +230,19 @@ const radarPositionPool = positions.filter((p) => p.program === "RADAR")
 // covered positions stable across reloads and between server/client renders.
 const staffRng = makeRng(91051)
 
+// CHANGEABLE: the "fully validated" cohort — 3 in every 4 staff (~75%). These
+// people hold ≥80% of their department's positions with current currency and
+// have every OJT position pool validated; everyone else is still building up.
+const isValidatedCohort = (staffIndex: number) => staffIndex % 4 !== 3
+
 export const staff: Staff[] = roster.map(([name, code, role], i) => {
   const parts = name.trim().split(/\s+/)
   const fn = parts[0]
   const ln = parts.slice(1).join(" ")
 
   // Split the roster down the middle: the first half work TOWER, the second
-  // half work RADAR. Each person is operational on MOST of their department's
-  // positions (a random 70–100% subset), so the department is well covered.
+  // half work RADAR. The validated cohort is operational on 85–100% of their
+  // department's positions; the rest on a 60–75% subset (still progressing).
   const program: "TOWER" | "RADAR" = i < Math.ceil(roster.length / 2) ? "TOWER" : "RADAR"
   const pool = program === "TOWER" ? towerPositionPool : radarPositionPool
 
@@ -247,8 +252,10 @@ export const staff: Staff[] = roster.map(([name, code, role], i) => {
     const r = Math.floor(staffRng() * (j + 1))
     ;[shuffled[j], shuffled[r]] = [shuffled[r], shuffled[j]]
   }
-  const minCount = Math.max(1, Math.ceil(pool.length * 0.7))
-  const count = minCount + Math.floor(staffRng() * (pool.length - minCount + 1))
+  const validated = isValidatedCohort(i)
+  const minCount = Math.max(1, Math.ceil(pool.length * (validated ? 0.85 : 0.6)))
+  const maxCount = validated ? pool.length : Math.max(minCount, Math.ceil(pool.length * 0.8) - 1)
+  const count = minCount + Math.floor(staffRng() * (maxCount - minCount + 1))
   const homePositions = Array.from(new Set(shuffled.slice(0, count).map((p) => p.id)))
 
   return {
@@ -785,8 +792,9 @@ export const trainingLogs: TrainingLogEntry[] = []
 
   // ── Complete trainee coverage ────────────────────────────────────────────
   // Every non-OJTI staff member is a trainee and must show accumulated hours on
-  // EVERY position group of their program. ~1 in 4 groups is fully validated
-  // (≥40h, occasionally an approved extension); the rest are still in progress,
+  // EVERY position group of their program. The validated cohort (~75% of staff)
+  // has every group fully validated (≥40h, occasionally an approved extension);
+  // everyone else has ~1 in 4 groups validated and the rest still in progress,
   // so the staff page and the OJTI tab both show a realistic mix.
   let logSeq = 1
   const trainees = staff.filter((s) => !ojtiStaffIds.has(s.id))
@@ -795,10 +803,12 @@ export const trainingLogs: TrainingLogEntry[] = []
     const ojtis = ojtiByProgram[program]
     if (ojtis.length === 0) continue
     const groups = TRAINING_GROUPS.filter((g) => g.program === program)
+    const fullyValidated = isValidatedCohort(staff.indexOf(trainee))
     for (let gi = 0; gi < groups.length; gi++) {
       const group = groups[gi]
       const rng = makeRng(hashSeed(`${trainee.id}:${group.id}`))
-      const completed = rng() < 0.25
+      const roll = rng()
+      const completed = fullyValidated || roll < 0.25
       const target = completed
         ? GROUP_CAP + Math.round(rng() * 12) // 40–52h (may include an approved extension)
         : Math.round((4 + rng() * 32) * 2) / 2 // 4–36h in 0.5h steps (in progress)

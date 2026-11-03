@@ -606,6 +606,17 @@ export function StoreProvider({
             // override the snapshot values applied above and below.
             setTrainingLogs(rs.trainingLogs)
             setStaffQualificationsData(rs.staffQualifications)
+            // v10: the reseeded runs only seat people on their SEEDED home
+            // positions, so refresh homePositions for seeded staff (matched by
+            // id) to keep currency consistent. All other staff fields and any
+            // staff added by an admin are left untouched.
+            const seedHomeById = new Map(seed.staff.map((s) => [s.id, s.homePositions]))
+            setStaffData((prev) =>
+              prev.map((s) => {
+                const home = seedHomeById.get(s.id)
+                return home ? { ...s, homePositions: [...home] } : s
+              }),
+            )
             // v7: the SOO/STO roles were added along with a couple of seeded
             // users for each. Users are otherwise preserved across versions, so
             // MERGE IN only the seeded users that a pre-v7 snapshot is missing
@@ -675,7 +686,7 @@ export function StoreProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Durable snapshot: SAVE ────────────────────────────────────────────────
+  // ── Durable snapshot: SAVE ───────��────────────────────────────────────────
   // Any change to any persisted slice schedules a debounced write of the WHOLE
   // snapshot to Blob. Because every mutation already flows through these state
   // setters, this single effect captures every edit on every page — no per-page
@@ -1400,7 +1411,7 @@ export function StoreProvider({
         if (a.staffId) dayLoad.set(a.staffId, (dayLoad.get(a.staffId) ?? 0) + 1)
       })
 
-      // ── Rotation history (built from the EXISTING schedule) ───────────────
+      // ��─ Rotation history (built from the EXISTING schedule) ───────────────
       // These maps drive the rotation rule so people cycle through the
       // positions they are validated for instead of getting stuck on one:
       //   • posCount   — how many times a person has sat a given position, so
