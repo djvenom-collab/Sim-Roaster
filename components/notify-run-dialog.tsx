@@ -10,8 +10,9 @@
  * role has the notify_staff permission.
  * =========================================================================== */
 import { useState } from "react"
-import { toast } from "sonner"
 import { useStore } from "@/lib/store"
+import { bulkDeliveryToast } from "@/lib/delivery-toast"
+import { InboxStatus } from "@/components/inbox-status"
 import { useNotify } from "@/lib/use-notify"
 import { can } from "@/lib/permissions"
 import { Button } from "@/components/ui/button"
@@ -26,7 +27,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { NotifyStaffButton } from "@/components/notify-staff-button"
-import { Send, Mail, Phone, Loader2, Users } from "lucide-react"
+import { Send, Loader2, Users } from "lucide-react"
 import { formatDate } from "@/lib/dates"
 import type { Run } from "@/lib/types"
 
@@ -50,7 +51,7 @@ export function NotifyRunDialog({ run, trigger }: { run: Run; trigger?: React.Re
     setSendingAll(true)
     let ok = 0
     let fail = 0
-    let simulated = false
+    let noAccount = 0
     // Each person gets ONE combined daily digest covering this run plus any
     // other seating or training they have on the same day.
     const seen = new Set<string>()
@@ -64,7 +65,7 @@ export function NotifyRunDialog({ run, trigger }: { run: Run; trigger?: React.Re
       }
       try {
         const res = await sendDailyEmail(ctx)
-        if (res.simulated) simulated = true
+        if (!res.hasAccount) noAccount++
         ok++
       } catch {
         fail++
@@ -72,14 +73,7 @@ export function NotifyRunDialog({ run, trigger }: { run: Run; trigger?: React.Re
     }
     setSendingAll(false)
     if (ok > 0) store.markNotified(`run:${run.id}`)
-    if (ok > 0 && fail === 0)
-      toast.success(
-        simulated
-          ? `Prepared ${ok} email(s) (demo mode — no key configured)`
-          : `Sent ${ok} email(s) to assigned staff`,
-      )
-    else if (ok > 0) toast.warning(`Sent ${ok}, failed ${fail}`)
-    else toast.error("Could not send emails")
+    bulkDeliveryToast(ok, fail, noAccount)
   }
 
   return (
@@ -97,8 +91,8 @@ export function NotifyRunDialog({ run, trigger }: { run: Run; trigger?: React.Re
         <DialogHeader>
           <DialogTitle>Notify assigned staff</DialogTitle>
           <DialogDescription>
-            {ex?.code} · {formatDate(run.date)} · {run.slotTime} — &ldquo;Send all&rdquo; emails each person one
-            combined schedule for the day, including any training they also have.
+            {ex?.code} · {formatDate(run.date)} · {run.slotTime} — &ldquo;Send all&rdquo; delivers one combined
+            schedule for the day to each person&apos;s in-app inbox, including any training they also have.
           </DialogDescription>
         </DialogHeader>
 
@@ -125,14 +119,7 @@ export function NotifyRunDialog({ run, trigger }: { run: Run; trigger?: React.Re
                         {staff.firstName} {staff.lastName}
                       </span>
                     </div>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                      <span className="flex items-center gap-1">
-                        <Mail className="size-3" /> {staff.email || "no email"}
-                      </span>
-                      <span className="flex items-center gap-1">
-                        <Phone className="size-3" /> {staff.phone || "no phone"}
-                      </span>
-                    </div>
+                    <InboxStatus staffId={staff.id} />
                   </div>
                   <NotifyStaffButton run={run} staffId={staff.id} positionId={positionId} />
                 </div>
@@ -147,7 +134,7 @@ export function NotifyRunDialog({ run, trigger }: { run: Run; trigger?: React.Re
           </Button>
           <Button onClick={handleSendAll} disabled={sendingAll || assigned.length === 0}>
             {sendingAll ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            Send all emails
+            Send all in-app
           </Button>
         </DialogFooter>
       </DialogContent>

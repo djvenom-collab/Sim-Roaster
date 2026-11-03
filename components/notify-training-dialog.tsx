@@ -13,7 +13,9 @@ import { toast } from "sonner"
 import { useStore } from "@/lib/store"
 import { useNotify } from "@/lib/use-notify"
 import { can } from "@/lib/permissions"
-import { buildDailyMessage, buildDailySmsBody, mailtoHref, smsHref } from "@/lib/notify"
+import { buildDailyMessage } from "@/lib/notify"
+import { deliveryToast, bulkDeliveryToast } from "@/lib/delivery-toast"
+import { InboxStatus } from "@/components/inbox-status"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -33,7 +35,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
-import { Send, Mail, MessageSquare, Copy, Phone, Loader2, Users, GraduationCap } from "lucide-react"
+import { Send, Inbox, Copy, Loader2, Users, GraduationCap } from "lucide-react"
 import { formatDate } from "@/lib/dates"
 import type { TrainingSession } from "@/lib/types"
 
@@ -41,25 +43,16 @@ import type { TrainingSession } from "@/lib/types"
 // so the message also covers any seating the person has that same day.
 function PersonNotify({ staffId, date }: { staffId: string; date: string }) {
   const { buildDailyContext, sendDailyEmail } = useNotify()
-  const [sending, setSending] = useState(false)
   const ctx = buildDailyContext(staffId, date)
   if (!ctx) return null
   const msg = buildDailyMessage(ctx)
-  const sms = buildDailySmsBody(ctx)
 
   const send = async () => {
-    setSending(true)
     try {
       const res = await sendDailyEmail(ctx)
-      toast.success(
-        res.simulated
-          ? `Email prepared for ${ctx.staff.firstName} (demo mode — no key configured)`
-          : `Email sent to ${ctx.staff.firstName}`,
-      )
+      deliveryToast(ctx.staff.firstName, res)
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to send email")
-    } finally {
-      setSending(false)
+      toast.error(e instanceof Error ? e.message : "Failed to send notification")
     }
   }
 
@@ -77,7 +70,7 @@ function PersonNotify({ staffId, date }: { staffId: string; date: string }) {
       <DropdownMenuTrigger
         render={
           <Button variant="ghost" size="icon" className="size-7" aria-label="Notify person">
-            {sending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
+            <Send className="size-4" />
           </Button>
         }
       />
@@ -86,16 +79,9 @@ function PersonNotify({ staffId, date }: { staffId: string; date: string }) {
           Notify {ctx.staff.firstName} {ctx.staff.lastName}
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={send} disabled={sending}>
-          <Send className="text-muted-foreground" /> Send email now
+        <DropdownMenuItem onClick={send}>
+          <Inbox className="text-muted-foreground" /> Send to in-app inbox
         </DropdownMenuItem>
-        <DropdownMenuItem render={<a href={mailtoHref(ctx.staff.email, msg)} />} disabled={!ctx.staff.email}>
-          <Mail className="text-muted-foreground" /> Open in email app
-        </DropdownMenuItem>
-        <DropdownMenuItem render={<a href={smsHref(ctx.staff.phone, sms)} />} disabled={!ctx.staff.phone}>
-          <MessageSquare className="text-muted-foreground" /> Send SMS
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
         <DropdownMenuItem onClick={copy}>
           <Copy className="text-muted-foreground" /> Copy message
         </DropdownMenuItem>
@@ -132,7 +118,7 @@ export function NotifyTrainingDialog({
     setSendingAll(true)
     let ok = 0
     let fail = 0
-    let simulated = false
+    let noAccount = 0
     for (const { staff } of recipients) {
       const ctx = buildDailyContext(staff.id, session.date)
       if (!ctx) {
@@ -141,7 +127,7 @@ export function NotifyTrainingDialog({
       }
       try {
         const res = await sendDailyEmail(ctx)
-        if (res.simulated) simulated = true
+        if (!res.hasAccount) noAccount++
         ok++
       } catch {
         fail++
@@ -149,14 +135,7 @@ export function NotifyTrainingDialog({
     }
     setSendingAll(false)
     if (ok > 0) store.markNotified(`training:${session.id}`)
-    if (ok > 0 && fail === 0)
-      toast.success(
-        simulated
-          ? `Prepared ${ok} email(s) (demo mode — no key configured)`
-          : `Sent ${ok} email(s) to attendees`,
-      )
-    else if (ok > 0) toast.warning(`Sent ${ok}, failed ${fail}`)
-    else toast.error("Could not send emails")
+    bulkDeliveryToast(ok, fail, noAccount)
   }
 
   return (
@@ -202,14 +181,7 @@ export function NotifyTrainingDialog({
                       {staff.firstName} {staff.lastName}
                     </span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <Mail className="size-3" /> {staff.email || "no email"}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <Phone className="size-3" /> {staff.phone || "no phone"}
-                    </span>
-                  </div>
+                  <InboxStatus staffId={staff.id} />
                 </div>
                 <PersonNotify staffId={staff.id} date={session.date} />
               </div>
@@ -223,7 +195,7 @@ export function NotifyTrainingDialog({
           </Button>
           <Button onClick={handleSendAll} disabled={sendingAll || recipients.length === 0}>
             {sendingAll ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-            Send all emails
+            Send all in-app
           </Button>
         </DialogFooter>
       </DialogContent>

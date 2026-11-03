@@ -6,10 +6,11 @@
  * This is the bridge between the screens and the message templates. It:
  *   1. "build*Context" — collects a person's runs / training / currency for a
  *      run, a day, or a week into a tidy object the templates understand.
- *   2. "send*Email"    — turns that into a message, posts it to /api/notify,
- *      and records it so it appears in the Notification Viewer.
- *   3. "recordHandoff" — logs SMS / copy / open-in-mail actions (no server
- *      send) so they also show in the viewer.
+ *   2. "send*Email"    — turns that into a message and delivers it to the
+ *      recipient's IN-APP inbox (no real email/SMS is sent in this prototype).
+ *      It also appears in the Notification Viewer.
+ *   3. "recordHandoff" — logs copy-to-clipboard actions so they also show in
+ *      the viewer.
  *
  * CHANGEABLE PARAMETERS:
  *   - The working week is Mon–Fri: see `addDaysISO(weekStart, 4)` in
@@ -38,20 +39,45 @@ import {
 import { addDaysISO } from "./dates"
 import type { NotificationChannel, NotificationKind, Run, TrainingAttachment } from "./types"
 
-async function postEmail(to: string, name: string, subject: string, body: string) {
-  const res = await fetch("/api/notify", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ to, name, subject, body }),
-  })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(data?.error || "Failed to send email")
-  return data as { id?: string; simulated?: boolean }
+export interface DeliveryResult {
+  /** Always true: in-app delivery cannot fail once the recipient exists. */
+  delivered: true
+  /** Whether the recipient has an active login that can open the inbox. */
+  hasAccount: boolean
 }
 
 export function useNotify() {
   const store = useStore()
   const { recordNotification } = store
+
+  // This prototype has no email/SMS provider: every "email" is delivered to the
+  // recipient's in-app inbox (bell + My notifications), which doubles as the
+  // simulated mailbox. No email address or phone number is required.
+  const deliverInApp = useCallback(
+    (args: {
+      staffId: string
+      kind: NotificationKind
+      subject: string
+      body: string
+      attachments?: TrainingAttachment[]
+    }): DeliveryResult => {
+      const staff = store.staffById(args.staffId)
+      if (!staff) throw new Error("Unknown staff member")
+      const account = store.users.find((u) => u.staffId === staff.id && u.active)
+      recordNotification({
+        staffId: staff.id,
+        channel: "in_app",
+        kind: args.kind,
+        subject: args.subject,
+        body: args.body,
+        to: account ? `${account.name} (in-app inbox)` : "In-app inbox",
+        simulated: false,
+        attachments: args.attachments,
+      })
+      return { delivered: true, hasAccount: !!account }
+    },
+    [recordNotification, store],
+  )
 
   const buildContext = useCallback(
     (run: Run, staffId: string, positionId: string): NotifyContext | null => {
@@ -230,101 +256,38 @@ export function useNotify() {
     [store],
   )
 
-  // Send a combined daily digest email and record it.
+  // The send* names are kept for callers; all of them deliver in-app.
   const sendDailyEmail = useCallback(
     async (ctx: DailyContext) => {
       const msg = buildDailyMessage(ctx)
-      const res = await postEmail(
-        ctx.staff.email,
-        `${ctx.staff.firstName} ${ctx.staff.lastName}`,
-        msg.subject,
-        msg.body,
-      )
-      recordNotification({
-        staffId: ctx.staff.id,
-        channel: "email",
-        kind: "daily",
-        subject: msg.subject,
-        body: msg.body,
-        to: ctx.staff.email,
-        simulated: !!res.simulated,
-      })
-      return res
+      return deliverInApp({ staffId: ctx.staff.id, kind: "daily", ...msg })
     },
-    [recordNotification],
+    [deliverInApp],
   )
 
-  // Send a free-text custom message (with optional attachments) to one person
-  // and record it so it shows in their inbox and the Notification Viewer.
   const sendCustomEmail = useCallback(
-    async (args: { staffId: string; subject: string; body: string; attachments?: TrainingAttachment[] }) => {
-      const staff = store.staffById(args.staffId)
-      if (!staff) throw new Error("Unknown staff member")
-      const res = await postEmail(staff.email, `${staff.firstName} ${staff.lastName}`, args.subject, args.body)
-      recordNotification({
-        staffId: staff.id,
-        channel: "email",
-        kind: "custom",
-        subject: args.subject,
-        body: args.body,
-        to: staff.email,
-        simulated: !!res.simulated,
-        attachments: args.attachments,
-      })
-      return res
-    },
-    [recordNotification, store],
+    async (args: { staffId: string; subject: string; body: string; attachments?: TrainingAttachment[] }) =>
+      deliverInApp({ ...args, kind: "custom" }),
+    [deliverInApp],
   )
 
-  // Send an assignment email and record it against the staff member.
   const sendEmail = useCallback(
     async (ctx: NotifyContext) => {
       const msg = buildAssignmentMessage(ctx)
-      const res = await postEmail(
-        ctx.staff.email,
-        `${ctx.staff.firstName} ${ctx.staff.lastName}`,
-        msg.subject,
-        msg.body,
-      )
-      recordNotification({
-        staffId: ctx.staff.id,
-        channel: "email",
-        kind: "assignment",
-        subject: msg.subject,
-        body: msg.body,
-        to: ctx.staff.email,
-        simulated: !!res.simulated,
-      })
-      return res
+      return deliverInApp({ staffId: ctx.staff.id, kind: "assignment", ...msg })
     },
-    [recordNotification],
+    [deliverInApp],
   )
 
-  // Send a weekly schedule digest email and record it.
   const sendWeeklyEmail = useCallback(
     async (ctx: WeeklyContext) => {
       const msg = buildWeeklyMessage(ctx)
-      const res = await postEmail(
-        ctx.staff.email,
-        `${ctx.staff.firstName} ${ctx.staff.lastName}`,
-        msg.subject,
-        msg.body,
-      )
-      recordNotification({
-        staffId: ctx.staff.id,
-        channel: "email",
-        kind: "weekly",
-        subject: msg.subject,
-        body: msg.body,
-        to: ctx.staff.email,
-        simulated: !!res.simulated,
-      })
-      return res
+      return deliverInApp({ staffId: ctx.staff.id, kind: "weekly", ...msg })
     },
-    [recordNotification],
+    [deliverInApp],
   )
 
-  // Record a non-email hand-off (SMS / copy / open-in-mail) so it shows in the viewer.
+  // Record a copy-to-clipboard hand-off so it shows in the viewer.
   const recordHandoff = useCallback(
     (args: {
       staffId: string

@@ -4,7 +4,7 @@
  * WEEKLY PUSH DIALOG — send everyone their week ahead
  * ===========================================================================
  * Builds a Mon–Fri digest for each active person (their seating, training, and
- * any expiring/expired currency) and lets a manager email/SMS it, one person at
+ * any expiring/expired currency) and lets a manager deliver it to their in-app inbox, one person at
  * a time or "Push to all". Conceptually sent the Sunday before the week.
  * Hidden unless the role has the push_notifications permission.
  *
@@ -29,9 +29,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
-import { CalendarRange, ChevronLeft, ChevronRight, Send, Loader2, Mail, MessageSquare } from "lucide-react"
+import { CalendarRange, ChevronLeft, ChevronRight, Send, Loader2, Inbox } from "lucide-react"
 import { TODAY, toISO, addDays, parseISO, formatShort } from "@/lib/dates"
-import { buildWeeklySmsBody, smsHref } from "@/lib/notify"
+import { deliveryToast, bulkDeliveryToast } from "@/lib/delivery-toast"
+import { InboxStatus } from "@/components/inbox-status"
 import { can } from "@/lib/permissions"
 
 // Monday of the week containing `d`. Weeks run Mon–Sun; the digest is sent the
@@ -49,7 +50,7 @@ function sendDateFor(weekStartISO: string): string {
 
 export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) {
   const store = useStore()
-  const { buildWeekContext, sendWeeklyEmail, recordHandoff } = useNotify()
+  const { buildWeekContext, sendWeeklyEmail } = useNotify()
   const [open, setOpen] = useState(false)
   // Pushing weekly schedules is restricted to SUP and above via the matrix.
   const canPush = can(store.currentRole, "push_notifications")
@@ -100,11 +101,11 @@ export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) 
     setSending(true)
     let ok = 0
     let fail = 0
-    let simulated = false
+    let noAccount = 0
     for (const ctx of sendable) {
       try {
         const res = await sendWeeklyEmail(ctx)
-        if (res.simulated) simulated = true
+        if (!res.hasAccount) noAccount++
         markWeeklyNotified(ctx)
         ok++
       } catch {
@@ -112,14 +113,7 @@ export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) 
       }
     }
     setSending(false)
-    if (ok > 0 && fail === 0)
-      toast.success(
-        simulated
-          ? `Prepared ${ok} weekly schedule(s) (demo mode — no key configured)`
-          : `Pushed weekly schedule to ${ok} staff`,
-      )
-    else if (ok > 0) toast.warning(`Sent ${ok}, failed ${fail}`)
-    else toast.error("No weekly schedules to send")
+    bulkDeliveryToast(ok, fail, noAccount, "weekly digest")
   }
 
   return (
@@ -183,7 +177,7 @@ export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) 
                     <p className="truncate text-sm font-medium">
                       {ctx.staff.firstName} {ctx.staff.lastName}
                     </p>
-                    <p className="truncate text-xs text-muted-foreground">{ctx.staff.email || "no email"}</p>
+                    <InboxStatus staffId={ctx.staff.id} />
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline">
@@ -208,49 +202,20 @@ export function WeeklyPushDialog({ trigger }: { trigger?: React.ReactElement }) 
                       </Badge>
                     )}
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="size-8"
-                      aria-label={`Open SMS for ${ctx.staff.firstName}`}
-                      disabled={!ctx.staff.phone || !hasContent(ctx)}
-                      render={
-                        <a
-                          href={smsHref(ctx.staff.phone, buildWeeklySmsBody(ctx))}
-                          onClick={() => {
-                            recordHandoff({
-                              staffId: ctx.staff.id,
-                              channel: "sms",
-                              kind: "weekly",
-                              subject: `Weekly schedule — week of ${formatShort(weekStart)}`,
-                              body: buildWeeklySmsBody(ctx),
-                              to: ctx.staff.phone,
-                            })
-                            markWeeklyNotified(ctx)
-                          }}
-                        />
-                      }
-                    >
-                      <MessageSquare className="size-4" />
-                    </Button>
-                    <Button
                       variant="outline"
                       size="sm"
-                      disabled={!ctx.staff.email || !hasContent(ctx)}
+                      disabled={!hasContent(ctx)}
                       onClick={async () => {
                         try {
                           const res = await sendWeeklyEmail(ctx)
                           markWeeklyNotified(ctx)
-                          toast.success(
-                            res.simulated
-                              ? `Prepared weekly schedule for ${ctx.staff.firstName} (demo mode)`
-                              : `Sent weekly schedule to ${ctx.staff.firstName}`,
-                          )
+                          deliveryToast(ctx.staff.firstName, res)
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : "Failed to send")
                         }
                       }}
                     >
-                      <Mail className="size-4" /> Email
+                      <Inbox className="size-4" /> Send
                     </Button>
                   </div>
                 </div>

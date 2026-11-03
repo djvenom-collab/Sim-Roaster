@@ -981,7 +981,7 @@ const notificationFactory = defineFactory({
     .object({
       id: z.string().optional(),
       staffId: z.string(),
-      channel: z.enum(["email", "sms", "copy"]).optional(),
+      channel: z.enum(["in_app", "email", "sms", "copy"]).optional(),
       kind: z.enum(["assignment", "weekly", "daily", "training", "custom"]).optional(),
       subject: z.string().optional(),
       body: z.string().optional(),
