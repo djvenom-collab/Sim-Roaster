@@ -558,7 +558,7 @@ export const exerciseQualRules: ExerciseQualRule[] = [
 // NOTE: a completed run refreshes currency, so the numbers here are only a
 // starting point — the authoritative team-wide caps are enforced by the
 // normalization pass AFTER run assignments are seeded (see further below).
-const MAX_EXPIRED = 2 // CHANGEABLE: how many "expired currency" records to seed across everyone
+const MAX_EXPIRED = 8 // CHANGEABLE: how many "expired currency" records to seed across everyone
 let expiredBudget = MAX_EXPIRED
 export const staffValidity: StaffValidity[] = []
 staff.forEach((s, si) => {
@@ -1206,8 +1206,8 @@ export const runAssignments: RunAssignment[] = []
 // exact same records are shown every reload. Valid/never records are untouched,
 // so the vast majority of profiles still show their real last-sat date.
 {
-  const TARGET_EXPIRED = 2 // CHANGEABLE: expired-currency records team-wide (kept minimal)
-  const TARGET_EXPIRING = 3 // CHANGEABLE: expiring-soon records team-wide (kept minimal)
+  const TARGET_EXPIRED = 8 // CHANGEABLE: expired-currency records team-wide
+  const TARGET_EXPIRING = 12 // CHANGEABLE: expiring-soon records team-wide
   let keepExpired = TARGET_EXPIRED
   let keepExpiring = TARGET_EXPIRING
   const ordered = [...staffValidity].sort((a, b) =>
@@ -1241,8 +1241,8 @@ export const runAssignments: RunAssignment[] = []
 // leaving only a small handful of alerts for realism. Deterministic (stable
 // sort), so the same records show every reload.
 {
-  const KEEP_EXPIRED = 2 // CHANGEABLE: expired alerts left on the live dashboard
-  const KEEP_EXPIRING = 3 // CHANGEABLE: expiring alerts left on the live dashboard
+  const KEEP_EXPIRED = 8 // CHANGEABLE: expired alerts left on the live dashboard
+  const KEEP_EXPIRING = 12 // CHANGEABLE: expiring alerts left on the live dashboard
   const staffByIdMap = new Map(staff.map((s) => [s.id, s]))
   const posByIdMap = new Map(positions.map((p) => [p.id, p]))
   const runByIdMap = new Map(runs.map((r) => [r.id, r]))
@@ -1271,6 +1271,12 @@ export const runAssignments: RunAssignment[] = []
   // run dated a few days ago (well inside every validity window → reads valid).
   let keepE = KEEP_EXPIRED
   let keepG = KEEP_EXPIRING
+  // If fewer records lapse into "expiring" naturally than KEEP_EXPIRING asks
+  // for, date that many refresh runs so they land inside the warning window.
+  let expiringShortfall = Math.max(
+    0,
+    KEEP_EXPIRING - lapsing.filter((l) => l.status === "expiring").length,
+  )
   let topupSeq = 1
   for (const { staffId, posId, status } of lapsing) {
     if (status === "expired" && keepE > 0) {
@@ -1287,7 +1293,12 @@ export const runAssignments: RunAssignment[] = []
       exercises.find((e) => e.program === program && e.requiredPositions.includes(posId)) ??
       exercises.find((e) => e.program === program) ??
       exercises[0]
-    const date = addDaysISO(T, -(5 + (topupSeq % 10))) // 5–14 days ago, spread out
+    let date = addDaysISO(T, -(5 + (topupSeq % 10))) // 5–14 days ago, spread out
+    const vd = posByIdMap.get(posId)!.validityDays
+    if (expiringShortfall > 0 && vd > 14) {
+      expiringShortfall--
+      date = addDaysISO(T, -(vd - 7)) // 7 days of currency left → expiring
+    }
     const runId = datedId("run", date, 900000 + topupSeq)
     runs.push({
       id: runId,

@@ -105,7 +105,9 @@ import type { Permission } from "./permissions"
 //     pool validated. The reseed replaces runs/currency/training logs, and the
 //     migration refreshes each seeded staff member's homePositions to match
 //     (other staff edits are preserved).
-export const SNAPSHOT_VERSION = 10
+// v11: 4x the currency-warning counts (expired 2→8, expiring 3→12). The reseed
+//     replaces runs/assignments/currency so the dashboard shows the new counts.
+export const SNAPSHOT_VERSION = 11
 
 export interface PersistedState {
   version: number
