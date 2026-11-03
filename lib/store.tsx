@@ -284,6 +284,10 @@ interface StoreState {
   notificationsForStaff: (staffId: string) => NotificationRecord[]
   // Marks a notification as opened/read by its recipient (first open wins).
   markNotificationRead: (id: string) => void
+  // Recipient-only inbox actions. Delete is a soft delete so the admin
+  // Notification Viewer keeps its audit trail.
+  toggleNotificationFlag: (id: string) => void
+  deleteNotification: (id: string) => void
   // notify-dirty tracking: flags a run/training whose schedule changed since the
   // affected people were last notified. Key format: `run:<id>` / `training:<id>`.
   markNotifyDirty: (key: string) => void
@@ -1156,6 +1160,34 @@ export function StoreProvider({
       return next
     })
   }, [])
+
+  // Only the recipient may flag or delete their own notification.
+  const updateOwnNotification = useCallback(
+    (id: string, patch: (n: NotificationRecord) => Partial<NotificationRecord>) => {
+      const me = currentUserRef.current.staffId
+      if (!me) return
+      setNotifications((prev) => {
+        let changed = false
+        const next = prev.map((n) => {
+          if (n.id !== id || n.staffId !== me) return n
+          changed = true
+          return { ...n, ...patch(n) }
+        })
+        return changed ? next : prev
+      })
+    },
+    [],
+  )
+
+  const toggleNotificationFlag = useCallback(
+    (id: string) => updateOwnNotification(id, (n) => ({ flagged: !n.flagged })),
+    [updateOwnNotification],
+  )
+
+  const deleteNotification = useCallback(
+    (id: string) => updateOwnNotification(id, () => ({ deletedAt: new Date().toISOString() })),
+    [updateOwnNotification],
+  )
 
   // Flag a run/training as having changed since affected people were last notified.
   // The autosave effect persists notifyDirty to Blob automatically.
@@ -2233,6 +2265,8 @@ export function StoreProvider({
     recordNotification,
     notificationsForStaff,
     markNotificationRead,
+    toggleNotificationFlag,
+    deleteNotification,
     markNotifyDirty,
     markNotified,
     needsNotify,
@@ -2262,6 +2296,7 @@ export function StoreProvider({
     addSlotTime, updateSlotTime, deleteSlotTime, addPublicHoliday, updatePublicHoliday, deletePublicHoliday,
     trainingGroupsData, addTrainingGroup, updateTrainingGroup, deleteTrainingGroup,
     log, logImport, notifications, recordNotification, notificationsForStaff, markNotificationRead,
+    toggleNotificationFlag, deleteNotification,
     notifyDirty, markNotifyDirty, markNotified, needsNotify,
   ])
 

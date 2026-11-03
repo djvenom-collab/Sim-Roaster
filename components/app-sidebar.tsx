@@ -28,6 +28,7 @@ import {
   CalendarOff,
   Layers,
   BellRing,
+  Inbox,
   ListTodo,
   Send,
   GanttChartSquare,
@@ -66,6 +67,7 @@ interface NavItem {
 
 const overview: NavItem[] = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard, perm: "page_dashboard" },
+  { title: "My Notifications", href: "/notifications", icon: Inbox },
 ]
 
 const operations: NavItem[] = [

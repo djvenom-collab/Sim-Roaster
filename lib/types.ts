@@ -457,7 +457,7 @@ export interface ImportHistory {
   rowsRejected: number
 }
 
-// ── Notifications ───────────────────────────────────────────────────────
+// ── Notifications ────────────────────────���──────────────────────────────
 export type NotificationChannel = "email" | "sms" | "copy"
 // "custom" = a free-text message composed on the Send Message page.
 export type NotificationKind = "assignment" | "weekly" | "daily" | "training" | "custom"
@@ -475,4 +475,6 @@ export interface NotificationRecord {
   simulated: boolean // true when no email provider key configured (demo mode)
   readAt?: string // ISO timestamp when the recipient first opened/read it
   attachments?: TrainingAttachment[] // openable files included with a custom message
+  flagged?: boolean // recipient marked it as important
+  deletedAt?: string // recipient removed it from their inbox (kept for the admin viewer's audit trail)
 }
