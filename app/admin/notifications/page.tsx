@@ -8,8 +8,8 @@
  * opened/read.
  *
  * Notifications are created by the useNotify hook (lib/use-notify.ts) and the
- * wording lives in lib/notify.ts. In demo mode (no email key) sends are
- * "simulated" and flagged as such here.
+ * wording lives in lib/notify.ts. This prototype has no email provider, so
+ * sends are delivered to the recipient's in-app inbox (channel "in_app").
  * =========================================================================== */
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
@@ -28,6 +28,7 @@ const channelMeta: Record<
   NotificationChannel,
   { icon: typeof Mail; label: string; className: string }
 > = {
+  in_app: { icon: Inbox, label: "In-app", className: "bg-primary/15 text-primary border-primary/30" },
   email: { icon: Mail, label: "Email", className: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30" },
   sms: { icon: MessageSquare, label: "SMS", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" },
   copy: { icon: Copy, label: "Copied", className: "bg-muted text-muted-foreground border-border" },

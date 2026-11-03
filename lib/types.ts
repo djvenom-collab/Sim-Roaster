@@ -457,8 +457,11 @@ export interface ImportHistory {
   rowsRejected: number
 }
 
-// ── Notifications ────────────────────────���──────────────────────────────
-export type NotificationChannel = "email" | "sms" | "copy"
+// ── Notifications ────────────────────────�����──────────────────────────────
+// "in_app" = delivered to the recipient's in-app inbox (this prototype has no
+// real email/SMS provider, so every send is simulated in-app). "email"/"sms"
+// remain only so older stored records still render.
+export type NotificationChannel = "in_app" | "email" | "sms" | "copy"
 // "custom" = a free-text message composed on the Send Message page.
 export type NotificationKind = "assignment" | "weekly" | "daily" | "training" | "custom"
 

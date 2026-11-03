@@ -6,6 +6,7 @@
  * notification the same way.
  * =========================================================================== */
 import {
+  Inbox,
   Mail,
   MessageSquare,
   Copy,
@@ -19,6 +20,7 @@ import {
 import type { NotificationChannel, NotificationKind, NotificationRecord } from "@/lib/types"
 
 export const channelMeta: Record<NotificationChannel, { icon: LucideIcon; label: string; className: string }> = {
+  in_app: { icon: Inbox, label: "In-app", className: "bg-primary/15 text-primary border-primary/30" },
   email: { icon: Mail, label: "Email", className: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/30" },
   sms: { icon: MessageSquare, label: "SMS", className: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30" },
   copy: { icon: Copy, label: "Copied", className: "bg-muted text-muted-foreground border-border" },
