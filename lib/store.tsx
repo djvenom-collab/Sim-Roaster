@@ -281,6 +281,8 @@ interface StoreState {
   logImport: (summary: string) => void
   // notifications
   recordNotification: (n: Omit<NotificationRecord, "id" | "sentAt" | "sentBy">) => NotificationRecord
+  // Bulk variant: records many notifications in ONE state update (one render).
+  recordNotifications: (list: Omit<NotificationRecord, "id" | "sentAt" | "sentBy">[]) => NotificationRecord[]
   notificationsForStaff: (staffId: string) => NotificationRecord[]
   // Marks a notification as opened/read by its recipient (first open wins).
   markNotificationRead: (id: string) => void
@@ -292,6 +294,7 @@ interface StoreState {
   // affected people were last notified. Key format: `run:<id>` / `training:<id>`.
   markNotifyDirty: (key: string) => void
   markNotified: (key: string) => void
+  markNotifiedMany: (keys: string[]) => void
   needsNotify: (key: string) => boolean
 }
 
@@ -1136,6 +1139,26 @@ export function StoreProvider({
     [],
   )
 
+  // Bulk sends (e.g. weekly "Push to all") must go through here: calling
+  // recordNotification in a loop re-renders the whole app once per recipient.
+  const recordNotifications = useCallback(
+    (list: Omit<NotificationRecord, "id" | "sentAt" | "sentBy">[]): NotificationRecord[] => {
+      if (list.length === 0) return []
+      const sentAt = new Date().toISOString()
+      const sentBy = currentUserRef.current.name
+      const stamp = Date.now()
+      const recs: NotificationRecord[] = list.map((n, i) => ({
+        ...n,
+        id: `ntf-${stamp}-${i}-${Math.random().toString(36).slice(2, 7)}`,
+        sentAt,
+        sentBy,
+      }))
+      setNotifications((prev) => [...recs, ...prev].slice(0, 500))
+      return recs
+    },
+    [],
+  )
+
   const notificationsForStaff = useCallback(
     (staffId: string) =>
       notifications
@@ -1200,6 +1223,19 @@ export function StoreProvider({
     setNotifyDirty((prev) => {
       if (!prev[key]) return prev
       return { ...prev, [key]: { ...prev[key], notifiedAt: new Date().toISOString() } }
+    })
+  }, [])
+
+  const markNotifiedMany = useCallback((keys: string[]) => {
+    setNotifyDirty((prev) => {
+      const notifiedAt = new Date().toISOString()
+      let next = prev
+      for (const key of keys) {
+        if (!prev[key]) continue
+        if (next === prev) next = { ...prev }
+        next[key] = { ...prev[key], notifiedAt }
+      }
+      return next
     })
   }, [])
 
@@ -1462,7 +1498,7 @@ export function StoreProvider({
     markNotifyDirty(`run:${runId}`)
   }, [log, positionMap, markNotifyDirty])
 
-  // ── Fill Positions algorithm ──────────────────────────────────────────
+  // ── Fill Positions algorithm ───────────────────────────────���──────────
   const scoreCandidate = useCallback((staffId: string, positionId: string, date: string) => {
     const v = validityFor(staffId, positionId)
     if (v.status === "expired" || v.status === "never") return null
@@ -2095,7 +2131,7 @@ export function StoreProvider({
     log("position.delete", `Removed slot time ${id}`)
   }, [log])
 
-  // ── Public holidays ───────────────────────────────────────────────────
+  // ── Public holidays ─────────────────────────────────────���─────────────
   const addPublicHoliday = useCallback((h: PublicHoliday) => {
     setPublicHolidaysData((prev) => [...prev, h].sort((a, b) => a.date.localeCompare(b.date)))
     log("position.edit", `Added public holiday ${h.name} (${h.date})`)
@@ -2263,12 +2299,14 @@ export function StoreProvider({
     logImport,
     notifications,
     recordNotification,
+    recordNotifications,
     notificationsForStaff,
     markNotificationRead,
     toggleNotificationFlag,
     deleteNotification,
     markNotifyDirty,
     markNotified,
+    markNotifiedMany,
     needsNotify,
   }), [
     currentRole, currentUser, activeProgram, setActiveProgram, staffData, positionsData, simulatorsData, exercisesData,
@@ -2295,9 +2333,9 @@ export function StoreProvider({
     setStaffQualifications, addUser, updateUser, deleteUser, togglePermission, resetPermissions,
     addSlotTime, updateSlotTime, deleteSlotTime, addPublicHoliday, updatePublicHoliday, deletePublicHoliday,
     trainingGroupsData, addTrainingGroup, updateTrainingGroup, deleteTrainingGroup,
-    log, logImport, notifications, recordNotification, notificationsForStaff, markNotificationRead,
+    log, logImport, notifications, recordNotification, recordNotifications, notificationsForStaff, markNotificationRead,
     toggleNotificationFlag, deleteNotification,
-    notifyDirty, markNotifyDirty, markNotified, needsNotify,
+    notifyDirty, markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
   ])
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
