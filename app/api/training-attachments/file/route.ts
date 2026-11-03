@@ -7,15 +7,31 @@
  * =========================================================================== */
 import { type NextRequest, NextResponse } from "next/server"
 import { get } from "@vercel/blob"
+import { authorize, jsonError } from "@/lib/security/authz"
+import { trainingPathnameSchema } from "@/lib/security/validation"
+
+// Only these types render inline; anything else (HTML, SVG, scripts…) is
+// forced to download so an uploaded file can't run script on our origin.
+const INLINE_SAFE_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "text/plain",
+])
 
 export async function GET(request: NextRequest) {
-  try {
-    const pathname = request.nextUrl.searchParams.get("pathname")
-    const download = request.nextUrl.searchParams.get("download") === "1"
+  const authz = await authorize(request)
+  if (!authz.ok) return authz.response
 
-    if (!pathname) {
-      return NextResponse.json({ error: "Missing pathname" }, { status: 400 })
+  try {
+    const parsed = trainingPathnameSchema.safeParse(request.nextUrl.searchParams.get("pathname"))
+    if (!parsed.success) {
+      return jsonError(400, "invalid_pathname")
     }
+    const pathname = parsed.data
+    const download = request.nextUrl.searchParams.get("download") === "1"
 
     const result = await get(pathname, {
       access: "private",
@@ -23,7 +39,7 @@ export async function GET(request: NextRequest) {
     })
 
     if (!result) {
-      return new NextResponse("Not found", { status: 404 })
+      return jsonError(404, "not_found")
     }
 
     if (result.statusCode === 304) {
@@ -36,17 +52,21 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    const filename = pathname.split("/").pop() ?? "file"
+    const filename = (pathname.split("/").pop() ?? "file").replace(/["\\]/g, "_")
+    const contentType = (result.blob.contentType || "application/octet-stream").toLowerCase()
+    const inline = !download && INLINE_SAFE_TYPES.has(contentType.split(";")[0].trim())
     const headers: Record<string, string> = {
-      "Content-Type": result.blob.contentType,
+      "Content-Type": contentType,
       ETag: result.blob.etag,
       "Cache-Control": "private, no-cache",
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename="${filename}"`,
     }
-    headers["Content-Disposition"] = `${download ? "attachment" : "inline"}; filename="${filename}"`
 
     return new NextResponse(result.stream, { headers })
   } catch (error) {
-    console.error("[v0] Training attachment serve error:", error)
-    return NextResponse.json({ error: "Failed to serve file" }, { status: 500 })
+    console.error("[attachments] serve error:", (error as Error).message)
+    return jsonError(500, "serve_failed")
   }
 }

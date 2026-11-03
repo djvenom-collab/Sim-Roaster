@@ -10,7 +10,7 @@
  * CHANGEABLE: the leave types come from the LeaveType list in lib/types.ts.
  * Approval/rejection is handled by store actions in lib/store.tsx.
  * =========================================================================== */
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { useStore } from "@/lib/store"
 import { can, roleLevel } from "@/lib/permissions"
@@ -52,6 +52,8 @@ import { Plus, Check, X, CalendarOff, Pencil, Trash2, CalendarRange, Sun, Clock 
 import { formatShort, todayISO, addDaysISO, daysBetween } from "@/lib/dates"
 import type { LeaveRecord, LeaveType } from "@/lib/types"
 
+const LEAVE_PAGE_SIZE = 50
+
 const LEAVE_TYPES: LeaveType[] = ["Annual", "Sick", "Training", "Course", "Compassionate", "Other"]
 
 export default function LeavePage() {
@@ -73,9 +75,17 @@ export default function LeavePage() {
   // (Level 1) only ever see their own records.
   const canViewAll = roleLevel[store.currentRole] >= roleLevel.SUP
   const myStaffId = store.currentUser?.staffId
-  const sorted = [...store.scopedLeaveRecords]
-    .filter((l) => canViewAll || l.staffId === myStaffId)
-    .sort((a, b) => b.startDate.localeCompare(a.startDate))
+  const sorted = useMemo(
+    () =>
+      store.scopedLeaveRecords
+        .filter((l) => canViewAll || l.staffId === myStaffId)
+        .sort((a, b) => b.startDate.localeCompare(a.startDate)),
+    [store.scopedLeaveRecords, canViewAll, myStaffId],
+  )
+  // Rendering every record at once (twice: table + mobile list) made this page
+  // slow to open. Show a page at a time and let the user load more.
+  const [visibleCount, setVisibleCount] = useState(LEAVE_PAGE_SIZE)
+  const visible = sorted.slice(0, visibleCount)
 
   const leaveDays = (l: LeaveRecord) => daysBetween(l.startDate, l.endDate) + 1
 
@@ -286,7 +296,7 @@ export default function LeavePage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {sorted.map((l) => {
+                    {visible.map((l) => {
                       const s = store.staffById(l.staffId)
                       const days = leaveDays(l)
                       return (
@@ -321,7 +331,7 @@ export default function LeavePage() {
 
               {/* Mobile: stacked cards — no sideways scroll */}
               <ul className="divide-y md:hidden">
-                {sorted.map((l) => {
+                {visible.map((l) => {
                   const s = store.staffById(l.staffId)
                   const days = leaveDays(l)
                   return (
@@ -348,6 +358,22 @@ export default function LeavePage() {
                   )
                 })}
               </ul>
+
+              {sorted.length > visible.length && (
+                <div className="flex flex-col items-center gap-2 border-t p-4 sm:flex-row sm:justify-between">
+                  <p className="text-sm text-muted-foreground">
+                    Showing {visible.length} of {sorted.length} records
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => setVisibleCount((c) => c + LEAVE_PAGE_SIZE)}>
+                      Show {Math.min(LEAVE_PAGE_SIZE, sorted.length - visible.length)} more
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setVisibleCount(sorted.length)}>
+                      Show all
+                    </Button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </CardContent>

@@ -1,0 +1,147 @@
+{
+  "$comment": "Single source of truth for Sim-Roaster technical dependencies. Read by lib/continuity/*, scripts/dr/env-inventory.mjs and docs/business-continuity.md. Lists env var NAMES only, never values.",
+  "tiers": {
+    "1": "Critical: core rostering cannot be read or changed without it",
+    "2": "Important: a significant function is lost but a workaround exists",
+    "3": "Supporting: convenience or secondary channel; manual workaround is acceptable",
+    "4": "Non-essential: test, telemetry or cosmetic only"
+  },
+  "dependencies": [
+    {
+      "id": "vercel-hosting",
+      "name": "Vercel (hosting, serverless functions, routing, deployments)",
+      "kind": "platform",
+      "tier": 1,
+      "usedFor": "Serves the Next.js app and every /api route; holds environment configuration; runs the scheduled backup cron.",
+      "failureImpact": "Application unreachable.",
+      "envVars": [
+        { "name": "VERCEL_URL", "required": false, "managedBy": "vercel-system" },
+        { "name": "VERCEL_PROJECT_PRODUCTION_URL", "required": false, "managedBy": "vercel-system" },
+        { "name": "CRON_SECRET", "required": false, "managedBy": "manual", "note": "Enables /api/cron/backup. Unset = scheduled backups disabled." }
+      ]
+    },
+    {
+      "id": "vercel-blob",
+      "name": "Vercel Blob (private store)",
+      "kind": "storage",
+      "tier": 1,
+      "usedFor": "System of record for operational roster data (sim-roster/state.json), snapshot backups (sim-roster/backups/), backup manifests and DR evidence (sim-roster/dr/), training attachments, monitor archives.",
+      "failureImpact": "Roster cannot be loaded or saved; backups and attachments unavailable.",
+      "envVars": [
+        { "name": "BLOB_READ_WRITE_TOKEN", "required": true, "managedBy": "vercel-integration" },
+        { "name": "BLOB_STORE_ID", "required": false, "managedBy": "vercel-integration" }
+      ]
+    },
+    {
+      "id": "neon-postgres",
+      "name": "Neon PostgreSQL",
+      "kind": "database",
+      "tier": 1,
+      "usedFor": "Better Auth users/sessions/accounts, the append-only audit trail (audit.event), the ops relational schema (migration target).",
+      "failureImpact": "Nobody can sign in. Roster writes, restores and backup deletions are refused because the audit trail is fail-closed.",
+      "envVars": [
+        { "name": "DATABASE_URL", "required": true, "managedBy": "vercel-integration" },
+        { "name": "DATABASE_URL_UNPOOLED", "required": false, "managedBy": "vercel-integration", "note": "Used by migration and DR scripts." }
+      ]
+    },
+    {
+      "id": "better-auth",
+      "name": "Better Auth (email + password, in-app)",
+      "kind": "authentication",
+      "tier": 1,
+      "usedFor": "Sign-in, sessions, role resolution for every authorised API call.",
+      "failureImpact": "All authenticated pages and APIs return 401 / redirect to /login.",
+      "dependsOn": ["neon-postgres"],
+      "envVars": [
+        { "name": "BETTER_AUTH_SECRET", "required": true, "managedBy": "manual", "note": "Rotating it invalidates every session." },
+        { "name": "BETTER_AUTH_URL", "required": false, "managedBy": "manual" }
+      ]
+    },
+    {
+      "id": "microsoft-entra",
+      "name": "Microsoft Entra ID (optional SSO)",
+      "kind": "external-api",
+      "tier": 3,
+      "usedFor": "Optional Microsoft sign-in when configured.",
+      "failureImpact": "Microsoft sign-in fails; email + password still works.",
+      "dependsOn": ["better-auth"],
+      "envVars": [
+        { "name": "MICROSOFT_CLIENT_ID", "required": false, "managedBy": "manual" },
+        { "name": "MICROSOFT_CLIENT_SECRET", "required": false, "managedBy": "manual" },
+        { "name": "MICROSOFT_TENANT_ID", "required": false, "managedBy": "manual" },
+        { "name": "MICROSOFT_ALLOW_SIGNUP", "required": false, "managedBy": "manual" }
+      ]
+    },
+    {
+      "id": "resend-email",
+      "name": "Resend (transactional email)",
+      "kind": "email",
+      "tier": 3,
+      "usedFor": "Staff notification emails via /api/notify.",
+      "failureImpact": "Emails not delivered. Without a key the route runs in simulated mode. Notify staff by another channel.",
+      "envVars": [
+        { "name": "RESEND_API_KEY", "required": false, "managedBy": "manual" },
+        { "name": "NOTIFY_FROM_EMAIL", "required": false, "managedBy": "manual" }
+      ]
+    },
+    {
+      "id": "github",
+      "name": "GitHub (djvenom-collab/Sim-Roaster)",
+      "kind": "source-control",
+      "tier": 2,
+      "usedFor": "Source of truth for code, migrations, runbooks; triggers Vercel deployments.",
+      "failureImpact": "No new deployments; the running deployment is unaffected.",
+      "envVars": []
+    },
+    {
+      "id": "npm-registry",
+      "name": "npm registry and Google Fonts (build time only)",
+      "kind": "build",
+      "tier": 3,
+      "usedFor": "Dependency install and next/font download during build.",
+      "failureImpact": "New builds fail; running deployments and Instant Rollback are unaffected.",
+      "envVars": []
+    },
+    {
+      "id": "vercel-analytics",
+      "name": "Vercel Analytics",
+      "kind": "telemetry",
+      "tier": 4,
+      "usedFor": "Page-view analytics.",
+      "failureImpact": "None for users.",
+      "envVars": []
+    },
+    {
+      "id": "autonoma",
+      "name": "Autonoma (E2E test data)",
+      "kind": "test",
+      "tier": 4,
+      "usedFor": "Signed test-data seeding endpoint /api/autonoma.",
+      "failureImpact": "Automated E2E runs fail; no production impact.",
+      "envVars": [
+        { "name": "AUTONOMA_SIGNING_SECRET", "required": false, "managedBy": "manual" },
+        { "name": "AUTONOMA_SHARED_SECRET", "required": false, "managedBy": "manual" },
+        { "name": "AUTONOMA_ALLOW_PROD", "required": false, "managedBy": "manual" }
+      ]
+    },
+    {
+      "id": "ai-services",
+      "name": "AI services",
+      "kind": "ai",
+      "tier": 4,
+      "usedFor": "Not used. No AI SDK or model provider is a dependency (verified in package.json).",
+      "failureImpact": "Not applicable.",
+      "envVars": []
+    }
+  ],
+  "components": [
+    { "id": "roster-state", "name": "Roster read/write (/api/state, all planning pages)", "tier": 1, "dependsOn": ["vercel-hosting", "vercel-blob", "better-auth", "neon-postgres"] },
+    { "id": "authentication", "name": "Sign-in and sessions (/login, /api/auth)", "tier": 1, "dependsOn": ["vercel-hosting", "better-auth", "neon-postgres"] },
+    { "id": "backup-restore", "name": "Backup and restore (/backup, /api/backup*, /api/cron/backup)", "tier": 1, "dependsOn": ["vercel-hosting", "vercel-blob", "neon-postgres"] },
+    { "id": "audit-trail", "name": "Audit trail (/api/audit*, Admin page)", "tier": 2, "dependsOn": ["neon-postgres"] },
+    { "id": "training-attachments", "name": "Training attachments (/api/training-attachments/*)", "tier": 2, "dependsOn": ["vercel-blob"] },
+    { "id": "notifications", "name": "Email notifications (/api/notify)", "tier": 3, "dependsOn": ["resend-email"] },
+    { "id": "monitor", "name": "Monitor page (/monitor). Shows synthetic metrics, not real telemetry.", "tier": 4, "dependsOn": ["vercel-blob"] },
+    { "id": "health", "name": "Health endpoint (/api/health)", "tier": 2, "dependsOn": ["vercel-hosting"] }
+  ]
+}

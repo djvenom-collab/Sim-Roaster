@@ -8,9 +8,15 @@ __v0_jsx-dev-runtime.ts
 
 # Environment variables
 .env*.local
+.env
+.env.*
+!.env.example
 
 # Common ignores
 node_modules
 .next/
 .DS_Store
 .vercel
+
+# Autonoma local scratch (not shipped)
+.autonoma-scratch/

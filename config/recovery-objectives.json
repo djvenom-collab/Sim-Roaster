@@ -1,0 +1,25 @@
+{
+  "$comment": "RTO/RPO per criticality tier. 'approved' holds organisationally approved values and is intentionally null until the service owner signs off (record approvedBy/approvedOn). 'recommended' values are engineering RECOMMENDATIONS ONLY and are not approved objectives. Tooling uses approved values when present and otherwise falls back to recommended values, labelling the basis as 'recommended-unapproved'.",
+  "tiers": {
+    "1": {
+      "approved": { "rtoMinutes": null, "rpoMinutes": null, "approvedBy": null, "approvedOn": null },
+      "recommended": {
+        "rtoMinutes": 240,
+        "rpoMinutes": 1440,
+        "rationale": "The daily scheduled Blob snapshot bounds roster-data loss to 24h. Neon PITR covers auth and audit to near-zero within its history window. 4h allows a restore from backup or a Neon branch restore plus verification. To reach RPO <= 60 min, schedule the backup cron hourly (needs a Vercel plan that allows hourly crons)."
+      }
+    },
+    "2": {
+      "approved": { "rtoMinutes": null, "rpoMinutes": null, "approvedBy": null, "approvedOn": null },
+      "recommended": { "rtoMinutes": 480, "rpoMinutes": 1440, "rationale": "Same data stores as tier 1; may be restored after tier 1 is back." }
+    },
+    "3": {
+      "approved": { "rtoMinutes": null, "rpoMinutes": null, "approvedBy": null, "approvedOn": null },
+      "recommended": { "rtoMinutes": 4320, "rpoMinutes": null, "rationale": "Stateless integrations; manual workaround (notify staff directly). No data to lose." }
+    },
+    "4": {
+      "approved": { "rtoMinutes": null, "rpoMinutes": null, "approvedBy": null, "approvedOn": null },
+      "recommended": { "rtoMinutes": null, "rpoMinutes": null, "rationale": "Best effort." }
+    }
+  }
+}

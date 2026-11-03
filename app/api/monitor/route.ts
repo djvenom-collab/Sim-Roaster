@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { list, put, head } from "@vercel/blob"
+import { authorize } from "@/lib/security/authz"
 
 // ── Shared types (re-exported so the page can import them) ────────────────────
 export interface MetricSnapshot {
@@ -154,7 +155,13 @@ async function flushArchive(snapshots: MetricSnapshot[]): Promise<void> {
 }
 
 // ── GET /api/monitor — returns latest snapshot + full ring buffer ─────────────
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const authz = await authorize(request, {
+    anyPermission: ["page_monitor"],
+    rateLimit: { bucket: "monitor", limit: 60, windowSec: 60 },
+  })
+  if (!authz.ok) return authz.response
+
   // Seed from Blob on first request after a cold start
   await seedBufferFromBlob()
 

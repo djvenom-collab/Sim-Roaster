@@ -10,26 +10,29 @@
  * send for real. The message wording is built earlier in lib/notify.ts.
  * =========================================================================== */
 import { NextResponse } from "next/server"
+import { z } from "zod"
+import { authorize, jsonError } from "@/lib/security/authz"
 
-interface NotifyBody {
-  to?: string
-  name?: string
-  subject?: string
-  body?: string
-}
+const notifySchema = z.object({
+  to: z.string().trim().email().max(254),
+  name: z.string().max(200).optional(),
+  // Strip CR/LF so the subject can't inject extra mail headers.
+  subject: z.string().trim().min(1).max(300).transform((s) => s.replace(/[\r\n]+/g, " ")),
+  body: z.string().min(1).max(20_000),
+})
 
 export async function POST(req: Request) {
-  let payload: NotifyBody
-  try {
-    payload = await req.json()
-  } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 })
-  }
+  const authz = await authorize(req, {
+    anyPermission: ["notify_staff", "push_notifications"],
+    rateLimit: { bucket: "notify", limit: 30, windowSec: 60 },
+  })
+  if (!authz.ok) return authz.response
 
-  const { to, subject, body } = payload
-  if (!to || !subject || !body) {
-    return NextResponse.json({ error: "Missing recipient, subject, or body" }, { status: 400 })
+  const parsed = notifySchema.safeParse(await req.json().catch(() => null))
+  if (!parsed.success) {
+    return jsonError(400, "invalid_request")
   }
+  const { to, subject, body } = parsed.data
 
   const apiKey = process.env.RESEND_API_KEY
   // Demo-friendly: if no key is configured, don't fail — report that the email
@@ -49,13 +52,13 @@ export async function POST(req: Request) {
       text: body,
     })
     if (error) {
-      return NextResponse.json({ error: error.message || "Email provider error" }, { status: 502 })
+      console.error("[notify] provider error:", error.message)
+      return jsonError(502, "email_provider_error")
     }
+    console.info(`[audit] email sent by user=${authz.ctx.userId}`)
     return NextResponse.json({ id: data?.id })
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Failed to send email" },
-      { status: 500 },
-    )
+    console.error("[notify] send error:", (e as Error).message)
+    return jsonError(500, "send_failed")
   }
 }

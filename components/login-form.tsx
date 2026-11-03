@@ -18,6 +18,14 @@ const DEMO_ACCOUNTS: { email: string; label: string; level: number }[] = [
   { email: "admin@sim.local", label: "Admin", level: 6 },
 ]
 
+function signInErrorMessage(status: number | undefined): string {
+  if (status === 401) return "Incorrect email or password."
+  if (status === 429) return "Too many sign-in attempts. Please wait a minute and try again."
+  if (status === 403) return "Sign-in was blocked by a security check. Reload the page and try again."
+  if (status !== undefined && status >= 500) return "The sign-in service is unavailable right now. Please try again shortly."
+  return "Sign-in failed. Please try again."
+}
+
 export function LoginForm() {
   const router = useRouter()
   const [email, setEmail] = useState("")
@@ -34,7 +42,7 @@ export function LoginForm() {
     const { error } = await signIn.email({ email, password })
     setLoading(false)
     if (error) {
-      setError("Incorrect email or password.")
+      setError(signInErrorMessage(error.status))
       return
     }
     router.push("/")

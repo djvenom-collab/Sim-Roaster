@@ -340,6 +340,9 @@ export function StoreProvider({
   // existing one, or confirmed the store is empty). If the load errors, we stay
   // read-only for the session rather than risk clobbering good data on Blob.
   const canSaveRef = useRef(false)
+  // Revision (ETag) of the snapshot this session last read or wrote. Sent as
+  // If-Match so a save never silently overwrites another session's changes.
+  const revisionRef = useRef<string | null>(null)
 
   // Hydrate the persisted program scope on the client (avoids SSR mismatch).
   useEffect(() => {
@@ -455,8 +458,13 @@ export function StoreProvider({
     ;(async () => {
       try {
         const res = await fetch("/api/state", { cache: "no-store" })
-        const json = (await res.json()) as { state: Partial<PersistedState> | null; error?: string }
+        const json = (await res.json()) as {
+          state: Partial<PersistedState> | null
+          revision?: string | null
+          error?: string
+        }
         if (cancelled) return
+        revisionRef.current = json?.revision ?? null
         const snap = json?.state
         if (snap && (snap as { __autonoma?: boolean }).__autonoma === true) {
           // ── AUTONOMA test-run snapshot ────────────────────────────────────
@@ -730,11 +738,32 @@ export function StoreProvider({
     const id = setTimeout(() => {
       // NOTE: no `keepalive` — the snapshot can exceed the 64KB keepalive body
       // limit, which throws "Failed to fetch". Debounced saves cover every edit.
-      fetch("/api/state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(snapshot),
-      }).catch((e) => console.error("[v0] snapshot save failed", e))
+      if (!canSaveRef.current) return
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (revisionRef.current) headers["If-Match"] = revisionRef.current
+      fetch("/api/state", { method: "PUT", headers, body: JSON.stringify(snapshot) })
+        .then(async (res) => {
+          if (res.ok) {
+            const body = (await res.json().catch(() => null)) as { revision?: string } | null
+            revisionRef.current = body?.revision ?? res.headers.get("ETag") ?? revisionRef.current
+            return
+          }
+          if (res.status === 409 || res.status === 428) {
+            // Another session saved first. Stop autosaving so this tab cannot
+            // overwrite their work; a reload picks up the latest data.
+            canSaveRef.current = false
+            console.error("[sim-roster] snapshot changed in another session; reload to continue editing")
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("sim-roster:save-conflict"))
+              window.alert(
+                "Your changes could not be saved because someone else updated the roster in the meantime. Reload the page to load the latest data, then re-apply your change.",
+              )
+            }
+            return
+          }
+          console.error("[sim-roster] snapshot save failed", res.status)
+        })
+        .catch((e) => console.error("[sim-roster] snapshot save failed", e))
     }, 800)
     return () => clearTimeout(id)
   }, [
@@ -1159,15 +1188,47 @@ export function StoreProvider({
     return { ...c, lastDateSat: v.lastDateSat }
   }, [validityMap])
 
-  const isOnLeave = useCallback((staffId: string, date: string) =>
-    leaveRecords.find(
-      (l) => l.staffId === staffId && l.approval !== "rejected" && date >= l.startDate && date <= l.endDate,
-    ), [leaveRecords])
+  // These lookups run once per staff/day cell on the roster, Gantt and
+  // Dashboard views, so index them up front instead of scanning every record
+  // per call. Iteration order is preserved so results match the old `.find`.
+  const leaveByStaff = useMemo(() => {
+    const m = new Map<string, LeaveRecord[]>()
+    for (const l of leaveRecords) {
+      if (l.approval === "rejected") continue
+      const list = m.get(l.staffId)
+      if (list) list.push(l)
+      else m.set(l.staffId, [l])
+    }
+    return m
+  }, [leaveRecords])
 
-  const isInTraining = useCallback((staffId: string, date: string) => {
-    const sessionIds = trainingAttendance.filter((a) => a.staffId === staffId).map((a) => a.sessionId)
-    return trainingSessions.find((t) => sessionIds.includes(t.id) && t.date === date)
+  const isOnLeave = useCallback(
+    (staffId: string, date: string) =>
+      leaveByStaff.get(staffId)?.find((l) => date >= l.startDate && date <= l.endDate),
+    [leaveByStaff],
+  )
+
+  const trainingByStaffDate = useMemo(() => {
+    const attendeesBySession = new Map<string, string[]>()
+    for (const a of trainingAttendance) {
+      const list = attendeesBySession.get(a.sessionId)
+      if (list) list.push(a.staffId)
+      else attendeesBySession.set(a.sessionId, [a.staffId])
+    }
+    const m = new Map<string, (typeof trainingSessions)[number]>()
+    for (const t of trainingSessions) {
+      for (const staffId of attendeesBySession.get(t.id) ?? []) {
+        const key = `${staffId}|${t.date}`
+        if (!m.has(key)) m.set(key, t)
+      }
+    }
+    return m
   }, [trainingAttendance, trainingSessions])
+
+  const isInTraining = useCallback(
+    (staffId: string, date: string) => trainingByStaffDate.get(`${staffId}|${date}`),
+    [trainingByStaffDate],
+  )
 
   const otherTaskOn = useCallback(
     (staffId: string, date: string) =>

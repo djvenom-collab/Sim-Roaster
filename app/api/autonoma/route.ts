@@ -101,4 +101,19 @@ const handler = createHandler({
   },
 })
 
-export const POST = handler
+// PRODUCTION GUARD: the endpoint is dark (404) in production unless running on
+// an Autonoma preview environment (AUTONOMA_PREVIEWKIT) or a deliberate opt-in
+// (AUTONOMA_ALLOW_PROD=1), so the seeding / credential path can't be reached on
+// the real deployment even if the shared secret leaked.
+function isEnabled(): boolean {
+  if (process.env.NODE_ENV !== "production") return true
+  return Boolean(process.env.AUTONOMA_PREVIEWKIT) || process.env.AUTONOMA_ALLOW_PROD === "1"
+}
+
+export async function POST(request: Request): Promise<Response> {
+  if (!isEnabled()) return Response.json({ error: "not_found" }, { status: 404 })
+  if (!process.env.AUTONOMA_SHARED_SECRET || !process.env.AUTONOMA_SIGNING_SECRET) {
+    return Response.json({ error: "autonoma_not_configured" }, { status: 503 })
+  }
+  return handler(request)
+}
