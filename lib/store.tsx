@@ -37,6 +37,7 @@ import {
   type ReactNode,
 } from "react"
 import { useBrowserStorage, writeBrowserStorage } from "@/hooks/use-browser-storage"
+import { deleteOwnNotifications } from "./notification-actions"
 import { createLatestSaveQueue } from "./latest-save-queue"
 import * as seed from "./sample-data"
 import type {
@@ -114,6 +115,7 @@ interface StoreState {
   currentRole: RoleCode
   setCurrentRole: (r: RoleCode) => void
   currentUser: User
+  notificationsReady: boolean
 
   // active program scope (RADAR / TOWER / ALL)
   activeProgram: ProgramView
@@ -293,6 +295,7 @@ interface StoreState {
   // Notification Viewer keeps its audit trail.
   toggleNotificationFlag: (id: string) => void
   deleteNotification: (id: string) => void
+  deleteNotifications: (ids: string[]) => void
   // notify-dirty tracking: flags a run/training whose schedule changed since the
   // affected people were last notified. Key format: `run:<id>` / `training:<id>`.
   markNotifyDirty: (key: string) => void
@@ -352,6 +355,7 @@ export function StoreProvider({
   // with the seed during the initial load.
   const hydratedRef = useRef(false)
   const [hydrated, setHydrated] = useState(false)
+  const [notificationsReady, setNotificationsReady] = useState(false)
   // Only allow saving once we've SAFELY established the snapshot state (loaded an
   // existing one, or confirmed the store is empty). If the load errors, we stay
   // read-only for the session rather than risk clobbering good data on Blob.
@@ -725,6 +729,7 @@ export function StoreProvider({
         if (!cancelled) {
           hydratedRef.current = true
           setHydrated(true)
+          setNotificationsReady(canSaveRef.current)
         }
       }
     })()
@@ -1221,6 +1226,12 @@ export function StoreProvider({
     (id: string) => updateOwnNotification(id, () => ({ deletedAt: new Date().toISOString() })),
     [updateOwnNotification],
   )
+
+  const deleteNotifications = useCallback((ids: string[]) => {
+    const me = currentUserRef.current.staffId
+    const deletedAt = new Date().toISOString()
+    setNotifications((prev) => deleteOwnNotifications(prev, ids, me, deletedAt))
+  }, [])
 
   // Flag a run/training as having changed since affected people were last notified.
   // The autosave effect persists notifyDirty to Blob automatically.
@@ -2176,6 +2187,7 @@ export function StoreProvider({
     currentRole,
     setCurrentRole,
     currentUser,
+    notificationsReady,
     activeProgram,
     setActiveProgram,
     roles: seed.roles,
@@ -2314,12 +2326,13 @@ export function StoreProvider({
     markNotificationRead,
     toggleNotificationFlag,
     deleteNotification,
+    deleteNotifications,
     markNotifyDirty,
     markNotified,
     markNotifiedMany,
     needsNotify,
   }), [
-    currentRole, currentUser, activeProgram, setActiveProgram, staffData, positionsData, simulatorsData, exercisesData,
+    currentRole, currentUser, notificationsReady, activeProgram, setActiveProgram, staffData, positionsData, simulatorsData, exercisesData,
     coursesData, courseById, addCourse, updateCourse, deleteCourse, courseSimClass, setCourseSimClass,
     exerciseQualRulesData, setExerciseQualRule,
     qualificationsData, staffQualificationsData, users,
@@ -2344,7 +2357,7 @@ export function StoreProvider({
     addSlotTime, updateSlotTime, deleteSlotTime, addPublicHoliday, updatePublicHoliday, deletePublicHoliday,
     trainingGroupsData, addTrainingGroup, updateTrainingGroup, deleteTrainingGroup,
     log, logImport, notifications, recordNotification, recordNotifications, notificationsForStaff, markNotificationRead,
-    toggleNotificationFlag, deleteNotification,
+    toggleNotificationFlag, deleteNotification, deleteNotifications,
     markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
   ])
 

@@ -6,11 +6,10 @@
  * The bell icon with an unread count. Opening it lists the 7 most recent
  * notifications sent to the currently acting user, with a "View all" link to
  * the full inbox at /notifications. Clicking one opens the full message and
- * marks it read. The "last seen" marker is kept in the browser's localStorage
- * (SEEN_KEY) so the unread badge persists per user.
+ * marks it read. The badge uses persisted read receipts, just like the inbox.
+ * Sample data is hidden until the saved snapshot finishes loading.
  * =========================================================================== */
 import { useMemo, useState } from "react"
-import { useBrowserStorage, useHydrated, writeBrowserStorage } from "@/hooks/use-browser-storage"
 import Link from "next/link"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
@@ -22,17 +21,7 @@ import type { NotificationRecord } from "@/lib/types"
 import { channelMeta, kindMeta, flaggedClassName, relativeTime, previewText } from "@/lib/notification-meta"
 import { cn } from "@/lib/utils"
 
-const SEEN_KEY = "sim.notificationsSeen"
 const BELL_LIMIT = 7
-
-function readSeen(): Record<string, string> {
-  if (typeof window === "undefined") return {}
-  try {
-    return JSON.parse(window.localStorage.getItem(SEEN_KEY) || "{}") as Record<string, string>
-  } catch {
-    return {}
-  }
-}
 
 function NotificationRow({ n, onSelect }: { n: NotificationRecord; onSelect: () => void }) {
   const meta = channelMeta[n.channel]
@@ -81,52 +70,25 @@ function NotificationRow({ n, onSelect }: { n: NotificationRecord; onSelect: () 
 export function UserNotificationsBell() {
   const {
     currentUser,
+    notificationsReady,
     notificationsForStaff,
     markNotificationRead,
     toggleNotificationFlag,
     deleteNotification,
   } = useStore()
   const [open, setOpen] = useState(false)
-  const seenJSON = useBrowserStorage(SEEN_KEY)
-  const [seenOverride, setSeenOverride] = useState<{ staffId: string; value: string } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const mounted = useHydrated()
 
   const staffId = currentUser.staffId
   const received = useMemo(
-    () => (staffId ? notificationsForStaff(staffId).filter((n) => !n.deletedAt) : []),
-    [staffId, notificationsForStaff],
+    () => (notificationsReady && staffId ? notificationsForStaff(staffId).filter((n) => !n.deletedAt) : []),
+    [notificationsReady, staffId, notificationsForStaff],
   )
   const recent = received.slice(0, BELL_LIMIT)
   // Resolve from the live list so flag changes made in the dialog show at once.
   const selected = selectedId ? received.find((n) => n.id === selectedId) ?? null : null
 
-  const lastSeen = useMemo(() => {
-    if (!staffId) return ""
-    if (seenOverride?.staffId === staffId) return seenOverride.value
-    try {
-      return (JSON.parse(seenJSON || "{}") as Record<string, string>)?.[staffId] ?? ""
-    } catch {
-      return ""
-    }
-  }, [seenJSON, staffId, seenOverride])
-
-  const unread = useMemo(
-    () => (lastSeen ? received.filter((n) => n.sentAt > lastSeen).length : received.length),
-    [received, lastSeen],
-  )
-
-  // When opened, mark the newest notification as seen.
-  const handleOpenChange = (next: boolean) => {
-    setOpen(next)
-    if (next && staffId && received.length > 0) {
-      const newest = received[0].sentAt
-      const map = readSeen()
-      map[staffId] = newest
-      writeBrowserStorage(SEEN_KEY, JSON.stringify(map))
-      setSeenOverride({ staffId, value: newest })
-    }
-  }
+  const unread = received.filter((n) => !n.readAt).length
 
   const handleSelect = (n: NotificationRecord) => {
     setSelectedId(n.id)
@@ -137,12 +99,12 @@ export function UserNotificationsBell() {
   }
 
   return (
-    <Popover open={open} onOpenChange={handleOpenChange}>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         render={
           <Button variant="ghost" size="icon" className="relative size-8" aria-label="My notifications">
             <Bell className="size-4" />
-            {mounted && unread > 0 && (
+            {notificationsReady && unread > 0 && (
               <span
                 className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground"
                 aria-label={`${unread} unread notifications`}
@@ -161,9 +123,11 @@ export function UserNotificationsBell() {
             <p className="text-sm font-medium">My notifications</p>
             <p className="truncate text-xs text-muted-foreground">{currentUser.name}</p>
           </div>
-          <Badge variant="outline">{received.length}</Badge>
+          {notificationsReady && <Badge variant="outline">{received.length}</Badge>}
         </div>
-        {received.length === 0 ? (
+        {!notificationsReady ? (
+          <p role="status" className="px-4 py-10 text-center text-sm text-muted-foreground">Notifications are not loaded yet.</p>
+        ) : received.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-10 text-center">
             <Inbox className="size-6 text-muted-foreground" />
             <p className="text-sm font-medium">No notifications yet</p>
