@@ -1,17 +1,18 @@
 import "server-only"
-import type { Pool } from "pg"
+import type { Pool, PoolClient } from "pg"
 
 // Real multi-connection test, synthetic temporary namespace. No application,
 // auth, audit or source snapshot read/import. DDL/cleanup is transaction-local.
 export async function runNeonRehearsal(pool: Pool) {
   const first = await pool.connect()
-  const second = await pool.connect()
+  let second: PoolClient | undefined
   const schema = `rehearsal_${crypto.randomUUID().replaceAll("-", "")}`
   const table = `${schema}.notification`
   let firstOpen = false
   let secondOpen = false
   let created = false
   try {
+    second = await pool.connect()
     await first.query(`CREATE SCHEMA ${schema}`)
     created = true
     await first.query(`CREATE TABLE ${table} (id text PRIMARY KEY, recipient text NOT NULL, sent_order integer NOT NULL UNIQUE, archived boolean NOT NULL DEFAULT false, read_at timestamptz, flagged boolean, deleted_at timestamptz, payload jsonb NOT NULL)`)
@@ -59,7 +60,7 @@ export async function runNeonRehearsal(pool: Pool) {
     return { passed: true, synthetic: true, separateConnections: true, writerLockExclusion: contentionProtected, ...counts, recipientPredicate: true, rollback: true, attachmentsPreserved: true }
   } finally {
     if (firstOpen) await first.query("ROLLBACK").catch(() => {})
-    if (secondOpen) await second.query("ROLLBACK").catch(() => {})
-    try { if (created) await first.query(`DROP SCHEMA ${schema} CASCADE`) } finally { first.release(); second.release() }
+    if (secondOpen) await second?.query("ROLLBACK").catch(() => {})
+    try { if (created) await first.query(`DROP SCHEMA ${schema} CASCADE`) } finally { first.release(); second?.release() }
   }
 }
