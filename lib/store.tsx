@@ -37,6 +37,7 @@ import {
   type ReactNode,
 } from "react"
 import { useBrowserStorage, writeBrowserStorage } from "@/hooks/use-browser-storage"
+import { createLatestSaveQueue } from "./latest-save-queue"
 import * as seed from "./sample-data"
 import type {
   Assignment,
@@ -358,6 +359,38 @@ export function StoreProvider({
   // Revision (ETag) of the snapshot this session last read or wrote. Sent as
   // If-Match so a save never silently overwrites another session's changes.
   const revisionRef = useRef<string | null>(null)
+
+  const saveQueueRef = useRef<ReturnType<typeof createLatestSaveQueue<PersistedState>> | null>(null)
+  useEffect(() => {
+    const queue = createLatestSaveQueue<PersistedState>(async (snapshot) => {
+      if (!canSaveRef.current) return false
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (revisionRef.current) headers["If-Match"] = revisionRef.current
+      // Serialize only the snapshot actually being sent, not superseded edits.
+      const res = await fetch("/api/state", { method: "PUT", headers, body: JSON.stringify(snapshot) })
+      if (res.ok) {
+        const body = (await res.json()) as { revision?: string | null }
+        revisionRef.current = body.revision ?? res.headers.get("ETag") ?? revisionRef.current
+        return true
+      }
+      canSaveRef.current = false
+      if (res.status === 409 || res.status === 428) {
+        window.dispatchEvent(new CustomEvent("sim-roster:save-conflict"))
+        window.alert("Your changes could not be saved because someone else updated the roster in the meantime. Reload the page to load the latest data, then re-apply your change.")
+        return false
+      }
+      throw new Error(`Snapshot save failed (${res.status})`)
+    }, (error) => {
+      canSaveRef.current = false
+      console.error("[sim-roster] snapshot save failed; reload to recover", error)
+      window.alert("Your latest changes could not be confirmed as saved. Saving is paused to protect your roster. Reload to check the saved data before re-applying your changes.")
+    })
+    saveQueueRef.current = queue
+    return () => {
+      queue.stop()
+      saveQueueRef.current = null
+    }
+  }, [])
 
   const setActiveProgram = useCallback((p: ProgramView) => {
     setActiveProgramState(p)
@@ -743,34 +776,8 @@ export function StoreProvider({
       adminLogs,
     }
     const id = setTimeout(() => {
-      // NOTE: no `keepalive` — the snapshot can exceed the 64KB keepalive body
-      // limit, which throws "Failed to fetch". Debounced saves cover every edit.
-      if (!canSaveRef.current) return
-      const headers: Record<string, string> = { "Content-Type": "application/json" }
-      if (revisionRef.current) headers["If-Match"] = revisionRef.current
-      fetch("/api/state", { method: "PUT", headers, body: JSON.stringify(snapshot) })
-        .then(async (res) => {
-          if (res.ok) {
-            const body = (await res.json().catch(() => null)) as { revision?: string } | null
-            revisionRef.current = body?.revision ?? res.headers.get("ETag") ?? revisionRef.current
-            return
-          }
-          if (res.status === 409 || res.status === 428) {
-            // Another session saved first. Stop autosaving so this tab cannot
-            // overwrite their work; a reload picks up the latest data.
-            canSaveRef.current = false
-            console.error("[sim-roster] snapshot changed in another session; reload to continue editing")
-            if (typeof window !== "undefined") {
-              window.dispatchEvent(new CustomEvent("sim-roster:save-conflict"))
-              window.alert(
-                "Your changes could not be saved because someone else updated the roster in the meantime. Reload the page to load the latest data, then re-apply your change.",
-              )
-            }
-            return
-          }
-          console.error("[sim-roster] snapshot save failed", res.status)
-        })
-        .catch((e) => console.error("[sim-roster] snapshot save failed", e))
+      // No keepalive: whole snapshots can exceed its 64KB body limit.
+      if (canSaveRef.current) saveQueueRef.current?.enqueue(snapshot)
     }, 800)
     return () => clearTimeout(id)
   }, [
