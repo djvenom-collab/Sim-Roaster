@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { get, put } from "@vercel/blob"
-import { authorize, hasPermission, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
+import { authorize, invalidatePermissionCache, jsonError } from "@/lib/security/authz"
 import { reconcilePermissionMatrix, type Permission } from "@/lib/permissions"
 import { ConcurrencyConflictError, stateRepository, type Snapshot } from "@/lib/repository/state-repository"
 import {
@@ -154,9 +154,16 @@ export async function PUT(request: NextRequest) {
       )
     }
 
+    // We already read the authoritative stored snapshot for If-Match and diff.
+    // Reuse its matrix instead of downloading/parsing the entire Blob again
+    // through the global permission cache. Never authorize from incoming data.
+    const storedMatrix = current.state?.permissionMatrix
+    const matrix = reconcilePermissionMatrix(
+      storedMatrix && typeof storedMatrix === "object" && !Array.isArray(storedMatrix) ? storedMatrix : null,
+    )
     const denied: AuditEventInput[] = []
     for (const [slice, perm] of Object.entries(PROTECTED_SLICES)) {
-      if (await hasPermission(authz.ctx.role, perm)) continue
+      if (authz.ctx.role === "Admin" || matrix[authz.ctx.role]?.includes(perm)) continue
       if (current.state && slice in current.state) {
         if (slice in incoming && stableStringify(incoming[slice]) !== stableStringify(current.state[slice])) {
           denied.push({
@@ -173,6 +180,15 @@ export async function PUT(request: NextRequest) {
       }
     }
     if (denied.length > 0) await recordAuditSafe(audit, denied)
+
+    // An unchanged complete snapshot needs neither a Blob write nor a new
+    // revision. Compare every slice, including feeds ignored by audit diff.
+    // A later concurrent edit will still be rejected by the next If-Match.
+    if (current.state && current.revision && JSON.stringify(current.state) === JSON.stringify(incoming)) {
+      return NextResponse.json({ ok: true, revision: current.revision }, {
+        headers: { ETag: current.revision, ...traceHeaders },
+      })
+    }
 
     const diff = diffSnapshots(current.state, incoming)
     // The conditional write closes the race between the read above and here.
