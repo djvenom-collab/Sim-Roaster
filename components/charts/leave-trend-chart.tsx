@@ -32,7 +32,7 @@ export function LeaveTrendChart({ className, href }: { className?: string; href?
   const { value, setValue, range } = useChartRange(years)
 
   // Which program series to draw, per the global program slicer.
-  const shown: Program[] = store.activeProgram === "ALL" ? [...PROGRAMS] : [store.activeProgram]
+  const shown: Program[] = useMemo(() => store.activeProgram === "ALL" ? [...PROGRAMS] : [store.activeProgram], [store.activeProgram])
 
   const data = useMemo(
     () => applyRange(leaveTrendByMonth(store.leaveRecords, store.staffById, range.year), range),

@@ -9,7 +9,8 @@
  * marks it read. The "last seen" marker is kept in the browser's localStorage
  * (SEEN_KEY) so the unread badge persists per user.
  * =========================================================================== */
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
+import { useBrowserStorage, useHydrated, writeBrowserStorage } from "@/hooks/use-browser-storage"
 import Link from "next/link"
 import { useStore } from "@/lib/store"
 import { Button } from "@/components/ui/button"
@@ -80,37 +81,35 @@ function NotificationRow({ n, onSelect }: { n: NotificationRecord; onSelect: () 
 export function UserNotificationsBell() {
   const {
     currentUser,
-    notifications,
     notificationsForStaff,
     markNotificationRead,
     toggleNotificationFlag,
     deleteNotification,
   } = useStore()
   const [open, setOpen] = useState(false)
-  const [lastSeen, setLastSeen] = useState<string>("")
+  const seenJSON = useBrowserStorage(SEEN_KEY)
+  const [seenOverride, setSeenOverride] = useState<{ staffId: string; value: string } | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  // The unread badge depends on the acting user + a localStorage "last seen"
-  // marker, both of which only resolve on the client. Gate the badge on a
-  // mounted flag so the first client render matches the server (no badge),
-  // avoiding a hydration mismatch, then reveal it after mount.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  const mounted = useHydrated()
 
   const staffId = currentUser.staffId
   const received = useMemo(
     () => (staffId ? notificationsForStaff(staffId).filter((n) => !n.deletedAt) : []),
-    // notifications dependency ensures the list refreshes as new ones arrive
-    [staffId, notificationsForStaff, notifications],
+    [staffId, notificationsForStaff],
   )
   const recent = received.slice(0, BELL_LIMIT)
   // Resolve from the live list so flag changes made in the dialog show at once.
   const selected = selectedId ? received.find((n) => n.id === selectedId) ?? null : null
 
-  // Load this user's last-seen marker whenever the acting user changes.
-  useEffect(() => {
-    if (!staffId) return
-    setLastSeen(readSeen()[staffId] ?? "")
-  }, [staffId])
+  const lastSeen = useMemo(() => {
+    if (!staffId) return ""
+    if (seenOverride?.staffId === staffId) return seenOverride.value
+    try {
+      return (JSON.parse(seenJSON || "{}") as Record<string, string>)?.[staffId] ?? ""
+    } catch {
+      return ""
+    }
+  }, [seenJSON, staffId, seenOverride])
 
   const unread = useMemo(
     () => (lastSeen ? received.filter((n) => n.sentAt > lastSeen).length : received.length),
@@ -124,12 +123,8 @@ export function UserNotificationsBell() {
       const newest = received[0].sentAt
       const map = readSeen()
       map[staffId] = newest
-      try {
-        window.localStorage.setItem(SEEN_KEY, JSON.stringify(map))
-      } catch {
-        // ignore
-      }
-      setLastSeen(newest)
+      writeBrowserStorage(SEEN_KEY, JSON.stringify(map))
+      setSeenOverride({ staffId, value: newest })
     }
   }
 

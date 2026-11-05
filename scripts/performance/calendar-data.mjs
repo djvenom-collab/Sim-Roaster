@@ -13,12 +13,12 @@ const compile = (path, require) => {
   const { outputText } = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
   })
-  const module = { exports: {} }
-  new Function("require", "module", "exports", outputText)(require, module, module.exports)
-  return module.exports
+  const compiled = { exports: {} }
+  new Function("require", "module", "exports", outputText)(require, compiled, compiled.exports)
+  return compiled.exports
 }
 const dates = compile("../../lib/dates.ts", () => { throw Error("Unexpected date dependency") })
-const { useCalendarData, emptyFilters } = compile("../../lib/use-calendar-data.ts", (name) => {
+const { useCalendarData: evaluateCalendar, emptyFilters } = compile("../../lib/use-calendar-data.ts", (name) => {
   if (name === "react") return { useMemo: (build, deps) => {
     if (memo && deps.every((dep, i) => Object.is(dep, memo.deps[i]))) return memo.value
     memo = { value: build(), deps }
@@ -45,17 +45,17 @@ store = {
   publicHolidays: [{ date: "2026-11-05", name: "Holiday" }],
 }
 const range = { start: "2026-11-01", end: "2026-11-30" }
-const all = useCalendarData(emptyFilters)
-const visible = useCalendarData(emptyFilters, range)
+const all = evaluateCalendar(emptyFilters)
+const visible = evaluateCalendar(emptyFilters, range)
 assert.deepEqual([...visible], [...all].filter(([date]) => date >= range.start && date <= range.end))
 assert.equal(visible.get("2026-11-01").leaveCount, 1)
 assert.equal(visible.get("2026-11-30").leaveCount, 1)
 assert.equal(visible.get("2026-11-05").leaveCount, 0)
 store = { ...store, notifications: [{ id: "unrelated" }] }
-assert.equal(useCalendarData({ ...emptyFilters }, { ...range }), visible, "Unrelated updates must reuse calendar data")
-const filtered = useCalendarData({ ...emptyFilters, staffId: "s1" }, range)
+assert.equal(evaluateCalendar({ ...emptyFilters }, { ...range }), visible, "Unrelated updates must reuse calendar data")
+const filtered = evaluateCalendar({ ...emptyFilters, staffId: "s1" }, range)
 assert.equal(filtered.get("2026-11-05").trainingCount, 1, "Attendees count even when not the instructor")
-assert.equal(useCalendarData({ ...emptyFilters, status: "cancelled" }, range).get("2026-11-05").runs.length, 0)
+assert.equal(evaluateCalendar({ ...emptyFilters, status: "cancelled" }, range).get("2026-11-05").runs.length, 0)
 
 // Every filter must preserve the old visible-day result, not just counts for the unfiltered view.
 for (const filter of [
@@ -64,21 +64,21 @@ for (const filter of [
   { status: "confirmed" }, { trainingType: "refresher" },
 ]) {
   const filters = { ...emptyFilters, ...filter }
-  const unbounded = useCalendarData(filters)
-  assert.deepEqual([...useCalendarData(filters, range)], [...unbounded].filter(([date]) => date >= range.start && date <= range.end))
+  const unbounded = evaluateCalendar(filters)
+  assert.deepEqual([...evaluateCalendar(filters, range)], [...unbounded].filter(([date]) => date >= range.start && date <= range.end))
 }
-const beforeUpdate = useCalendarData(emptyFilters, range)
+const beforeUpdate = evaluateCalendar(emptyFilters, range)
 store = { ...store, scopedRuns: [...store.scopedRuns, { ...store.scopedRuns[0], id: "r2" }] }
-const afterUpdate = useCalendarData(emptyFilters, range)
+const afterUpdate = evaluateCalendar(emptyFilters, range)
 assert.notEqual(afterUpdate, beforeUpdate)
 assert.equal(afterUpdate.get("2026-11-05").runs.length, 2, "Real roster updates must invalidate the memo")
 
 // Keep the existing 366-day safety cap, even when a malformed long record overlaps the viewport.
 store = { ...store, scopedLeaveRecords: [{ staffId: "s1", startDate: "2020-01-01", endDate: "2030-01-01", approval: "approved" }] }
-assert.equal(useCalendarData(emptyFilters, range).get("2026-11-05").leaveCount, 0)
+assert.equal(evaluateCalendar(emptyFilters, range).get("2026-11-05").leaveCount, 0)
 // A week can cross a year boundary.
 store = { ...store, scopedLeaveRecords: [{ staffId: "s1", startDate: "2026-12-29", endDate: "2027-01-03", approval: "pending" }] }
-const week = useCalendarData(emptyFilters, { start: "2026-12-28", end: "2027-01-03" })
+const week = evaluateCalendar(emptyFilters, { start: "2026-12-28", end: "2027-01-03" })
 assert.equal(week.get("2027-01-03").leaveCount, 1)
 assert.equal(week.size, 6)
 
@@ -88,12 +88,12 @@ store = { ...store, scopedLeaveRecords: Array.from({ length: 2000 }, (_, i) => (
 })) }
 daySteps = 0
 let start = performance.now()
-useCalendarData(emptyFilters)
+evaluateCalendar(emptyFilters)
 const fullMs = performance.now() - start
 const fullSteps = daySteps
 daySteps = 0
 start = performance.now()
-useCalendarData(emptyFilters, range)
+evaluateCalendar(emptyFilters, range)
 const boundedMs = performance.now() - start
 assert.equal(daySteps, 0, "Off-screen history must not expand into dates")
 assert.equal(fullSteps, 734000) // 366 daily steps + one cap calculation per record

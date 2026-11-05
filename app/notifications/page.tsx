@@ -33,7 +33,6 @@ type Filter = "all" | "unread" | "important"
 export default function MyNotificationsPage() {
   const {
     currentUser,
-    notifications,
     notificationsForStaff,
     markNotificationRead,
     toggleNotificationFlag,
@@ -47,7 +46,7 @@ export default function MyNotificationsPage() {
   const staffId = currentUser.staffId
   const inbox = useMemo(
     () => (staffId ? notificationsForStaff(staffId).filter((n) => !n.deletedAt) : []),
-    [staffId, notificationsForStaff, notifications],
+    [staffId, notificationsForStaff],
   )
 
   const counts = useMemo(

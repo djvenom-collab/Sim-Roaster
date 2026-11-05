@@ -30,11 +30,13 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react"
+import { useBrowserStorage, writeBrowserStorage } from "@/hooks/use-browser-storage"
 import * as seed from "./sample-data"
 import type {
   Assignment,
@@ -339,7 +341,11 @@ export function StoreProvider({
   authEmail?: string
 }) {
   const [currentRole, setCurrentRole] = useState<RoleCode>(initialRole ?? "Admin")
-  const [activeProgram, setActiveProgramState] = useState<ProgramView>("ALL")
+  const savedProgram = useBrowserStorage(ACTIVE_PROGRAM_KEY)
+  const [programOverride, setActiveProgramState] = useState<ProgramView | null>(null)
+  const activeProgram = programOverride ?? (
+    savedProgram === "RADAR" || savedProgram === "TOWER" ? savedProgram : "ALL"
+  )
   // Flips true once the Blob snapshot has been loaded (or confirmed empty). The
   // autosave effect stays idle until then so it can never overwrite saved data
   // with the seed during the initial load.
@@ -353,28 +359,52 @@ export function StoreProvider({
   // If-Match so a save never silently overwrites another session's changes.
   const revisionRef = useRef<string | null>(null)
 
-  // Hydrate the persisted program scope on the client (avoids SSR mismatch).
-  useEffect(() => {
-    const stored = typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_PROGRAM_KEY) : null
-    if (stored === "RADAR" || stored === "TOWER" || stored === "ALL") setActiveProgramState(stored)
+  const setActiveProgram = useCallback((p: ProgramView) => {
+    setActiveProgramState(p)
+    writeBrowserStorage(ACTIVE_PROGRAM_KEY, p)
   }, [])
 
-  // Hydrate the persisted year-range slicer on the client. Clamped to the live
-  // window below so a stale saved range can never point at archived/future years.
-  useEffect(() => {
-    const raw = typeof window !== "undefined" ? window.localStorage.getItem(YEAR_RANGE_KEY) : null
-    if (!raw) return
+  // Global year slicer (view-only; not persisted to the data snapshot). Defaults
+  // to the full live retention window. The setter clamps to the live years so
+  // the slicer can never select an archived or future year.
+  const liveYears = useMemo(() => computeLiveYears(), [])
+  const savedYears = useBrowserStorage(YEAR_RANGE_KEY)
+  const [yearOverride, setYearRangeState] = useState<YearRange | null>(null)
+  const yearRange = useMemo(() => {
+    if (yearOverride) return yearOverride
+    const fallback = liveYearRange()
     try {
-      const parsed = JSON.parse(raw) as { start?: unknown; end?: unknown }
-      if (typeof parsed.start === "number" && typeof parsed.end === "number") {
-        setYearRange({ start: parsed.start, end: parsed.end })
-      }
+      const parsed = JSON.parse(savedYears || "null") as YearRange | null
+      if (!parsed || !Number.isFinite(parsed.start) || !Number.isFinite(parsed.end)) return fallback
+      const start = Math.min(Math.max(Math.trunc(parsed.start), fallback.start), fallback.end)
+      const end = Math.min(Math.max(Math.trunc(parsed.end), fallback.start), fallback.end)
+      return start <= end ? { start, end } : { start: end, end: start }
     } catch {
-      /* ignore malformed value */
+      return fallback
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [savedYears, yearOverride])
+  const setYearRange = useCallback(
+    (r: YearRange) => {
+      const lo = liveYears[0]
+      const hi = liveYears[liveYears.length - 1]
+      const start = Math.min(Math.max(r.start, lo), hi)
+      const end = Math.min(Math.max(r.end, lo), hi)
+      const next = start <= end ? { start, end } : { start: end, end: start }
+      setYearRangeState(next)
+      // Persist so the slicer survives reloads/navigation like the program scope.
+      writeBrowserStorage(YEAR_RANGE_KEY, JSON.stringify(next))
+    },
+    [liveYears],
+  )
 
+  const [staffData, setStaffData] = useState<Staff[]>(seed.staff)
+  const [positionsData, setPositionsData] = useState<Position[]>(seed.positions)
+  const [simulatorsData, setSimulatorsData] = useState<Simulator[]>(seed.simulators)
+  const [exercisesData, setExercisesData] = useState<Exercise[]>(seed.exercises)
+  const [coursesData, setCoursesData] = useState<Course[]>(seed.courses)
+  const [courseSimClass, setCourseSimClassState] = useState<Record<string, "operational" | "non-operational">>(
+    seed.courseSimClass,
+  )
   // Assign a course to a SIM bucket (or pass null to unassign it back to the
   // pickable course list). The snapshot autosave persists this automatically.
   const setCourseSimClass = useCallback(
@@ -389,38 +419,6 @@ export function StoreProvider({
     [],
   )
 
-  const setActiveProgram = useCallback((p: ProgramView) => {
-    setActiveProgramState(p)
-    if (typeof window !== "undefined") window.localStorage.setItem(ACTIVE_PROGRAM_KEY, p)
-  }, [])
-
-  // Global year slicer (view-only; not persisted to the data snapshot). Defaults
-  // to the full live retention window. The setter clamps to the live years so
-  // the slicer can never select an archived or future year.
-  const liveYears = useMemo(() => computeLiveYears(), [])
-  const [yearRange, setYearRangeState] = useState<YearRange>(() => liveYearRange())
-  const setYearRange = useCallback(
-    (r: YearRange) => {
-      const lo = liveYears[0]
-      const hi = liveYears[liveYears.length - 1]
-      const start = Math.min(Math.max(r.start, lo), hi)
-      const end = Math.min(Math.max(r.end, lo), hi)
-      const next = start <= end ? { start, end } : { start: end, end: start }
-      setYearRangeState(next)
-      // Persist so the slicer survives reloads/navigation like the program scope.
-      if (typeof window !== "undefined") window.localStorage.setItem(YEAR_RANGE_KEY, JSON.stringify(next))
-    },
-    [liveYears],
-  )
-
-  const [staffData, setStaffData] = useState<Staff[]>(seed.staff)
-  const [positionsData, setPositionsData] = useState<Position[]>(seed.positions)
-  const [simulatorsData, setSimulatorsData] = useState<Simulator[]>(seed.simulators)
-  const [exercisesData, setExercisesData] = useState<Exercise[]>(seed.exercises)
-  const [coursesData, setCoursesData] = useState<Course[]>(seed.courses)
-  const [courseSimClass, setCourseSimClassState] = useState<Record<string, "operational" | "non-operational">>(
-    seed.courseSimClass,
-  )
   const [exerciseQualRulesData, setExerciseQualRulesData] = useState<typeof seed.exerciseQualRules>(
     seed.exerciseQualRules,
   )
@@ -1096,12 +1094,15 @@ export function StoreProvider({
   )
 
   const currentUserRef = useRef(currentUser)
-  currentUserRef.current = currentUser
-
   const runsRef = useRef(runs)
-  runsRef.current = runs
   const assignmentsRef = useRef(runAssignments)
-  assignmentsRef.current = runAssignments
+  // Event handlers must see the latest committed data, not a speculative
+  // concurrent render. Publish all three snapshots together after commit.
+  useLayoutEffect(() => {
+    currentUserRef.current = currentUser
+    runsRef.current = runs
+    assignmentsRef.current = runAssignments
+  }, [currentUser, runs, runAssignments])
 
   const log = useCallback((action: AuditAction, detail: string) => {
     setAuditLogs((prev) => [
@@ -2314,8 +2315,8 @@ export function StoreProvider({
     currentRole, currentUser, activeProgram, setActiveProgram, staffData, positionsData, simulatorsData, exercisesData,
     coursesData, courseById, addCourse, updateCourse, deleteCourse, courseSimClass, setCourseSimClass,
     exerciseQualRulesData, setExerciseQualRule,
-    qualificationsData, staffQualificationsData, users, runs, runAssignments, leaveRecords,
-    otherTasksData, trainingSessions, trainingAttendance, trainingLogs, staffValidity, auditLogs, importHistory, faultLogs, operatorLogs, firewallLogs, adminLogs,
+    qualificationsData, staffQualificationsData, users,
+    trainingLogs, staffValidity, auditLogs, importHistory, faultLogs, operatorLogs, firewallLogs, adminLogs,
     slotTimesData, publicHolidaysData, permissionMatrix, assignmentsData,
     scopedStaff, scopedPositions, scopedSimulators, scopedExercises, scopedCourses, scopedRuns,
     scopedAssignments, scopedTrainingSessions, scopedLeaveRecords, scopedOtherTasks,
@@ -2329,7 +2330,7 @@ export function StoreProvider({
     updateTraining, deleteTraining,
     addTrainingLog, updateTrainingLog, deleteTrainingLog,
     toggleAttendance, addStaff, updateStaff, deleteStaff, addExercise, updateExercise,
-    deleteExercise, setExerciseQualRule, addSimulator, updateSimulator, deleteSimulator, addPosition,
+    deleteExercise, addSimulator, updateSimulator, deleteSimulator, addPosition,
     updatePosition, deletePosition, addQualification, updateQualification, deleteQualification,
     addAssignment, updateAssignment, deleteAssignment,
     setStaffQualifications, addUser, updateUser, deleteUser, togglePermission, resetPermissions,
@@ -2337,7 +2338,7 @@ export function StoreProvider({
     trainingGroupsData, addTrainingGroup, updateTrainingGroup, deleteTrainingGroup,
     log, logImport, notifications, recordNotification, recordNotifications, notificationsForStaff, markNotificationRead,
     toggleNotificationFlag, deleteNotification,
-    notifyDirty, markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
+    markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
   ])
 
   return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>

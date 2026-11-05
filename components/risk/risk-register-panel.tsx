@@ -32,7 +32,7 @@ export function RiskRegisterPanel() {
   const [importing, setImporting] = useState(false)
   const [selected, setSelected] = useState<string | null>(null)
 
-  const risks = data?.risks ?? []
+  const risks = useMemo(() => data?.risks ?? [], [data?.risks])
   const live = useMemo(() => risks.filter((r) => showClosed || r.status !== "closed"), [risks, showClosed])
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()

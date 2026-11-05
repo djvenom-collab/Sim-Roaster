@@ -6,17 +6,14 @@
  * The sun/moon button that flips between light and dark themes. It waits until
  * after mount before showing an icon to avoid a hydration mismatch.
  * =========================================================================== */
-import * as React from "react"
+import { useHydrated } from "@/hooks/use-browser-storage"
 import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme()
-  const [mounted, setMounted] = React.useState(false)
-
-  // Avoid hydration mismatch — only render the resolved icon after mount.
-  React.useEffect(() => setMounted(true), [])
+  const mounted = useHydrated()
 
   // Treat as light until mounted so SSR and the first client render match.
   const isDark = mounted && resolvedTheme === "dark"

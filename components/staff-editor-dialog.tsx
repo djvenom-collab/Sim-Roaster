@@ -8,7 +8,7 @@
  * the store. A person's programs + home positions directly affect which seats
  * they can be scheduled into.
  * =========================================================================== */
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import { toast } from "sonner"
 import {
   Dialog,
@@ -107,7 +107,7 @@ export function StaffEditorDialog({ open, onOpenChange, staff }: Props) {
     )
   }
 
-  const save = () => {
+  const handleSave = useCallback(() => {
     if (!form.firstName?.trim() || !form.lastName?.trim()) {
       toast.error("First and last name are required")
       return
@@ -142,7 +142,7 @@ export function StaffEditorDialog({ open, onOpenChange, staff }: Props) {
       selectedQuals.map((qualificationId) => ({ qualificationId })),
     )
     onOpenChange(false)
-  }
+  }, [form, staff, store, derivedPrograms, selectedQuals, onOpenChange])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -322,7 +322,7 @@ export function StaffEditorDialog({ open, onOpenChange, staff }: Props) {
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={save}>{staff ? "Save changes" : "Add staff"}</Button>
+          <Button onClick={handleSave}>{staff ? "Save changes" : "Add staff"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

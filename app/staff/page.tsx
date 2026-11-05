@@ -11,7 +11,8 @@
  * here update the live store copy. A person's home positions and programs
  * directly affect which seats they can be scheduled into.
  * =========================================================================== */
-import { useEffect, useState } from "react"
+import { useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useStore } from "@/lib/store"
 import { can } from "@/lib/permissions"
 import { PageHeader, StatusBadge, EmptyState } from "@/components/shared"
@@ -60,15 +61,9 @@ export default function StaffPage() {
   const store = useStore()
   const canManage = can(store.currentRole, "manage_staff")
   const [search, setSearch] = useState("")
-  const [selected, setSelected] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const [selected, setSelected] = useState<string | null>(() => searchParams.get("staff"))
   const [addOpen, setAddOpen] = useState(false)
-
-  // Allow other pages (e.g. the dashboard search) to deep-link straight to a
-  // profile via /staff?staff=<id>. Read it once on mount from the URL.
-  useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("staff")
-    if (id) setSelected(id)
-  }, [])
 
   const filtered = store.scopedStaff.filter((s) =>
     `${s.firstName} ${s.lastName} ${s.initials} ${s.rank}`.toLowerCase().includes(search.toLowerCase()),

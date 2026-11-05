@@ -11,21 +11,24 @@
  * the page can apply a temporary highlight ring.
  * =========================================================================== */
 import { useEffect, useState } from "react"
+import { useSearchParams } from "next/navigation"
 
 export function useDeepLinkHighlight(
   param: string,
   prefix: string,
   resolve?: (id: string) => void,
 ): string | null {
-  const [highlightId, setHighlightId] = useState<string | null>(null)
+  const searchParams = useSearchParams()
+  const [entryId] = useState(() => searchParams.get(param))
+  const [entryResolve] = useState(() => resolve)
+  const [highlightId, setHighlightId] = useState<string | null>(entryId)
 
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get(param)
+    const id = entryId
     if (!id) return
 
     // Let the page set whatever view state is needed for the item to render.
-    resolve?.(id)
-    setHighlightId(id)
+    entryResolve?.(id)
 
     // Scroll into view after the resolve-driven re-render has painted.
     const scrollTimer = setTimeout(() => {
@@ -42,9 +45,7 @@ export function useDeepLinkHighlight(
       clearTimeout(scrollTimer)
       clearTimeout(clearTimer)
     }
-    // Intentionally run once on mount; deep links are read from the entry URL.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [entryId, entryResolve, prefix])
 
   return highlightId
 }

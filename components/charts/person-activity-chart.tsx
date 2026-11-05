@@ -66,7 +66,7 @@ export function PersonActivityChart({ staffId, className }: { staffId: string; c
   )
 
   const rowTotal = (r: (typeof data)[number]) => r.runs + r.training + r.leave + r.tasks
-  const total = useMemo(() => data.reduce((sum, r) => sum + rowTotal(r), 0), [data])
+  const total = data.reduce((sum, r) => sum + rowTotal(r), 0)
   const description = range.ytd
     ? `${total} activities YTD ${range.year}`
     : `${total} activities in ${range.year}`
