@@ -25,7 +25,7 @@
       "name": "Vercel Blob (private store)",
       "kind": "storage",
       "tier": 1,
-      "usedFor": "System of record for operational roster data (sim-roster/state.json), snapshot backups (sim-roster/backups/), backup manifests and DR evidence (sim-roster/dr/), training attachments, monitor archives.",
+      "usedFor": "System of record for operational roster data (sim-roster/state.json), snapshot backups (sim-roster/backups/), backup manifests and DR evidence (sim-roster/dr/), training attachments. Legacy monitor archives are retained but no longer read or written by the app.",
       "failureImpact": "Roster cannot be loaded or saved; backups and attachments unavailable.",
       "envVars": [
         { "name": "BLOB_READ_WRITE_TOKEN", "required": true, "managedBy": "vercel-integration" },
@@ -141,7 +141,6 @@
     { "id": "audit-trail", "name": "Audit trail (/api/audit*, Admin page)", "tier": 2, "dependsOn": ["neon-postgres"] },
     { "id": "training-attachments", "name": "Training attachments (/api/training-attachments/*)", "tier": 2, "dependsOn": ["vercel-blob"] },
     { "id": "notifications", "name": "Email notifications (/api/notify)", "tier": 3, "dependsOn": ["resend-email"] },
-    { "id": "monitor", "name": "Monitor page (/monitor). Shows synthetic metrics, not real telemetry.", "tier": 4, "dependsOn": ["vercel-blob"] },
     { "id": "health", "name": "Health endpoint (/api/health)", "tier": 2, "dependsOn": ["vercel-hosting"] }
   ]
 }

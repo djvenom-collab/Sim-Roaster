@@ -46,7 +46,6 @@ export type Permission =
   | "page_settings"
   | "page_logs"
   | "page_backup"
-  | "page_monitor"
   // ── Scheduling & assignments ────────────────────────────────────────────
   | "edit_run"
   | "edit_assignment"
@@ -107,7 +106,6 @@ export const PERMISSION_GROUPS: PermissionGroup[] = [
       "page_settings",
       "page_logs",
       "page_backup",
-      "page_monitor",
     ],
   },
   {
@@ -166,7 +164,6 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   page_settings: "DIM Lists / Settings",
   page_logs: "System Logs",
   page_backup: "Backup & Restore",
-  page_monitor: "System Monitor",
   // Scheduling & assignments
   edit_run: "Edit runs",
   edit_assignment: "Edit assignments",
@@ -217,7 +214,6 @@ export const ROUTE_PERMISSIONS: { prefix: string; perm: Permission }[] = [
   { prefix: "/settings", perm: "page_settings" },
   { prefix: "/logs", perm: "page_logs" },
   { prefix: "/backup", perm: "page_backup" },
-  { prefix: "/monitor", perm: "page_monitor" },
   { prefix: "/", perm: "page_dashboard" },
 ]
 
