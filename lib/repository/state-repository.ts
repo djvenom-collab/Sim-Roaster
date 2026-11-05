@@ -16,6 +16,8 @@ export interface SnapshotRead {
 
 export interface StateRepository {
   read(): Promise<SnapshotRead>
+  /** Fresh raw JSON for the read-only download path; null means no snapshot. */
+  readStream(): Promise<{ stream: ReadableStream<Uint8Array>; revision: string | null } | null>
   /**
    * Writes the snapshot. When `expectedRevision` is provided the write only
    * succeeds if nobody has written since that revision was read; otherwise it
@@ -41,13 +43,22 @@ function normaliseRevision(etag: string | null | undefined): string | null {
 }
 
 class BlobStateRepository implements StateRepository {
-  async read(): Promise<SnapshotRead> {
+  async readStream() {
     const result = await get(STATE_PATHNAME, { access: "private", useCache: false })
-    if (!result || result.statusCode === 304 || !result.stream) return { state: null, revision: null }
+    if (!result) return null
+    // No conditional request was made. A missing body/304 is not proof of an
+    // empty store; fail closed instead of allowing the client to seed over it.
+    if (result.statusCode !== 200 || !result.stream) throw new Error("Snapshot body unavailable")
+    return { stream: result.stream, revision: normaliseRevision(result.blob.etag) }
+  }
+
+  async read(): Promise<SnapshotRead> {
+    const result = await this.readStream()
+    if (!result) return { state: null, revision: null }
     const text = await new Response(result.stream).text()
     return {
       state: text ? (JSON.parse(text) as Snapshot) : null,
-      revision: normaliseRevision(result.blob.etag),
+      revision: result.revision,
     }
   }
 

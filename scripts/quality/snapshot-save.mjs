@@ -99,6 +99,7 @@ const { PUT, GET } = load("../../app/api/state/route.ts", (name) => {
     ConcurrencyConflictError: Conflict,
     stateRepository: {
       read: async () => { reads++; return { state, revision: currentRevision } },
+      readStream: async () => { reads++; return state ? { stream: new Response(JSON.stringify(state)).body, revision: currentRevision } : null },
       write: async (next, opts) => {
         writes++
         assert.equal(opts.expectedRevision, currentRevision)
@@ -109,6 +110,7 @@ const { PUT, GET } = load("../../app/api/state/route.ts", (name) => {
       },
     },
   }
+  if (name === "@/lib/repository/snapshot-response") return load("../../lib/repository/snapshot-response.ts")
   if (name === "@/lib/audit/log") return auditModule
   if (name === "@/lib/audit/diff") return diff
   if (name === "@/lib/persisted-state") return { SNAPSHOT_VERSION: 11 }
@@ -180,4 +182,12 @@ const loaded = await GET(getRequest)
 assert.equal(loaded.status, 200)
 assert.deepEqual((await loaded.json()).state, original)
 assert.equal(loaded.headers.get("cache-control"), "no-store", "Never trade fresh loading for a stale cache")
+reset()
+authOk = false
+assert.equal((await GET(getRequest)).status, 401)
+assert.equal(reads, 0, "No Blob read may happen before authorization")
+reset()
+state = null
+currentRevision = null
+assert.deepEqual(await (await GET(getRequest)).json(), { state: null, revision: null }, "Only missing state enables seeding")
 console.log("PASS: serialized/coalesced saves; correct revisions; no-op write eliminated; authoritative permissions; conflicts, audit fail-closed, feeds and fresh GET preserved")
