@@ -1139,7 +1139,7 @@ export function StoreProvider({
   const log = useCallback((action: AuditAction, detail: string) => {
     setAuditLogs((prev) => [
       {
-        id: `al-${Date.now()}`,
+        id: `al-${crypto.randomUUID()}`,
         timestamp: `${todayISO()} ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`,
         user: currentUserRef.current.name,
         action,

@@ -43,7 +43,7 @@ function records(state: CandidateSnapshot) {
       value.forEach((payload,ordinal) => {
         const id = payload && typeof payload === "object" && "id" in payload ? payload.id : undefined
         const key = typeof id === "string" || typeof id === "number" ? `id:${id}` : `index:${ordinal}`
-        if (used.has(key)) throw new Error("Duplicate entity ID")
+        if (used.has(key)) throw new CandidateInvalidState("Duplicate entity ID")
         used.add(key)
         result.push({slice,kind:"array",key,ordinal,payload})
       })
@@ -204,7 +204,7 @@ export function candidateStore(pool: Pool) {
     const before=new Map(records(initial).map(r=>[JSON.stringify([r.slice,r.key]),r]))
     const after=new Map(records(source).map(r=>[JSON.stringify([r.slice,r.key]),r]))
     let added=0,removed=0,modified=0
-    for(const [key,row] of after){const old=before.get(key);if(!old)added++;else if(!isDeepStrictEqual(old.payload,row.payload)||old.ordinal!==row.ordinal)modified++}
+    for(const [key,row] of after){const old=before.get(key);if(!old)added++;else if(!isDeepStrictEqual(old.payload,row.payload)||(row.kind==="array"&&old.ordinal!==row.ordinal))modified++}
     for(const key of before.keys())if(!after.has(key))removed++
     const markers=new Set(["Isolated test rank","Isolated persistence check"])
     const sourceStaff=Array.isArray(source.staff)?source.staff:[]

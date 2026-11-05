@@ -14,10 +14,12 @@ try{
  await db.exec(candidateDDL)
  const repo=candidateStore(pool)
  assert.equal((await repo.read()).state,null)
- const source={version:11,staff:[{id:'s',nested:{z:1,a:'value'}}],empty:[],settings:{key:{x:true}},notifications:Array.from({length:502},(_,i)=>({id:`n${i}`,staffId:'s',sentAt:new Date(Date.UTC(2026,10,5,0,0,i)).toISOString(),readAt:i===0?'read':null,attachments:[{id:'f',pathname:'synthetic/file'}]}))}
+ const source={version:11,staff:[{id:'s',nested:{z:1,a:'value'}}],empty:[],settings:{key:{x:true},another:{enabled:false}},notifications:Array.from({length:502},(_,i)=>({id:`n${i}`,staffId:'s',sentAt:new Date(Date.UTC(2026,10,5,0,0,i)).toISOString(),readAt:i===0?'read':null,attachments:[{id:'f',pathname:'synthetic/file'}]}))}
  assert.equal((await repo.initialize(source,'test')).revision,'1')
  await assert.rejects(()=>repo.initialize(source,'test'),/already initialized/)
- assert.equal((await repo.compareSource(source)).matchesInitialCopy,true)
+ const parityReport=await repo.compareSource(source)
+ assert.equal(parityReport.matchesInitialCopy,true)
+ assert.equal(parityReport.modified,0,'JSONB object key order is not a record modification')
  const drift=structuredClone(source);drift.staff[0].rank='Isolated persistence check'
  const driftReport=await repo.compareSource(drift)
  assert.equal(driftReport.modified,1);assert.equal(driftReport.testMarkersFound,1)
