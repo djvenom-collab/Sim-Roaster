@@ -77,7 +77,12 @@ export default function ImportPage() {
   function saveImport() {
     const accepted = SAMPLE_ROWS.filter((r) => decisions[r.row] === "accept").length
     const scopeTag = store.activeProgram === "ALL" ? "all programs" : programDisplay(store.activeProgram)
-    store.logImport(`Imported sim_schedule_june.xlsx — ${accepted} rows accepted (${scopeTag})`)
+    store.logImport({
+      filename: "sim_schedule_june.xlsx",
+      rowsTotal: SAMPLE_ROWS.length,
+      rowsAccepted: accepted,
+      rowsRejected: SAMPLE_ROWS.length - accepted,
+    }, `Imported sim_schedule_june.xlsx — ${accepted} rows accepted (${scopeTag})`)
     toast.success(`Import saved: ${accepted} rows committed to schedule`)
     setStage("upload")
     setDecisions({})
@@ -101,13 +106,12 @@ export default function ImportPage() {
       <PageHeader
         title="Excel Import"
         description="Upload, map, preview, and reconcile simulator schedule data"
-      >
-        {stage !== "upload" && (
+        actions={stage !== "upload" && (
           <Button variant="outline" onClick={() => setStage("upload")}>
             Start over
           </Button>
         )}
-      </PageHeader>
+      />
 
       {/* Step indicator */}
       <div className="flex items-center gap-2 text-sm">
@@ -162,7 +166,7 @@ export default function ImportPage() {
                 <span className="text-sm font-medium">{col}</span>
                 <Select
                   value={mapping[col]}
-                  onValueChange={(v) => setMapping((p) => ({ ...p, [col]: v }))}
+                  onValueChange={(v) => { if (v !== null) setMapping((p) => ({ ...p, [col]: v })) }}
                 >
                   <SelectTrigger className="w-48">
                     <SelectValue />
@@ -291,8 +295,8 @@ export default function ImportPage() {
                   key={i}
                   className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-sm"
                 >
-                  <span>{h.summary}</span>
-                  <span className="text-xs text-muted-foreground">{h.when}</span>
+                  <span>{"summary" in h ? h.summary : `${h.filename} — ${h.rowsAccepted}/${h.rowsTotal} rows accepted`}</span>
+                  <span className="text-xs text-muted-foreground">{"when" in h ? h.when : h.date}</span>
                 </div>
               ))}
             </div>

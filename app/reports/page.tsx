@@ -89,7 +89,7 @@ export default function ReportsPage() {
       columns: ["StaffID", "PositionID", "LastDateSat", "ValidityDays"],
       rows: store.staffValidity
         .filter((v) => scopedStaffIds.has(v.staffId) && scopedPositionIds.has(v.positionId))
-        .map((v) => [v.staffId, v.positionId, v.lastDateSat, v.validityDays]),
+        .map((v) => [v.staffId, v.positionId, v.lastDateSat ?? "", v.validityDays]),
     },
     FactExerciseStatusHistory: {
       columns: ["RunID", "Status", "ChangedBy", "ChangedAt"],
@@ -126,11 +126,10 @@ export default function ReportsPage() {
       <PageHeader
         title="Reports / Power BI Export"
         description="Clean, normalized star-schema tables ready for Power BI ingestion"
-      >
-        <Button variant="outline" onClick={exportAll}>
+        actions={<Button variant="outline" onClick={exportAll}>
           <Database className="mr-2 h-4 w-4" /> Export full dataset
-        </Button>
-      </PageHeader>
+        </Button>}
+      />
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>

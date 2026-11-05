@@ -134,6 +134,7 @@ export function UserEditorDialog({ open, onOpenChange, user }: Props) {
               value={form.staffId ?? "none"}
               onValueChange={(v) =>
                 setForm((f) => {
+                  if (v === null) return f
                   if (v === "none") return { ...f, staffId: undefined }
                   // Auto-populate the account's name and email from the linked
                   // staff record so the two always match by default. The admin

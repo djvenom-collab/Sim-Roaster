@@ -133,7 +133,7 @@ export default function ValidityPage() {
             className="pl-8"
           />
         </div>
-        <Select value={posFilter} onValueChange={setPosFilter}>
+        <Select value={posFilter} onValueChange={(value) => { if (value !== null) setPosFilter(value) }}>
           <SelectTrigger className="w-44">
             <SelectValue placeholder="Position">
               {(value) => {
@@ -152,7 +152,7 @@ export default function ValidityPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
+        <Select value={statusFilter} onValueChange={(value) => { if (value !== null) setStatusFilter(value) }}>
           <SelectTrigger className="w-40">
             <SelectValue placeholder="Status">
               {(value) => {

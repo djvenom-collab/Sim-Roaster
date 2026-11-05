@@ -69,7 +69,7 @@ export default function TrainingPage() {
   const [open, setOpen] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [title, setTitle] = useState("")
-  const [type, setType] = useState(TYPES[0])
+  const [type, setType] = useState<TrainingSession["type"]>(TYPES[0])
   const [date, setDate] = useState(todayISO())
   const [slot, setSlot] = useState("09:00")
   const [instructor, setInstructor] = useState(store.scopedStaff[0]?.id ?? "")
@@ -245,7 +245,7 @@ export default function TrainingPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Type</Label>
-                  <Select value={type} onValueChange={setType}>
+                  <Select value={type} onValueChange={(value) => { if (value !== null) setType(value) }}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -260,7 +260,7 @@ export default function TrainingPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label>Instructor</Label>
-                  <Select value={instructor} onValueChange={setInstructor}>
+                  <Select value={instructor} onValueChange={(value) => { if (value !== null) setInstructor(value) }}>
                     <SelectTrigger>
                       <SelectValue>
                         {(value) => {
@@ -299,7 +299,7 @@ export default function TrainingPage() {
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Simulator (optional)</Label>
-                  <Select value={simId} onValueChange={setSimId}>
+                  <Select value={simId} onValueChange={(value) => { if (value !== null) setSimId(value) }}>
                     <SelectTrigger>
                       <SelectValue>
                         {(value) => {
