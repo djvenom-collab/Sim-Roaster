@@ -37,7 +37,6 @@ import {
   Building2,
   ScrollText,
   DatabaseBackup,
-  Activity,
   LoaderCircle,
 } from "lucide-react"
 import Link, { useLinkStatus } from "next/link"
@@ -102,7 +101,6 @@ const settings: NavItem[] = [
   { title: "DIM Lists", href: "/settings", icon: Settings, perm: "page_settings" },
   { title: "System Logs", href: "/logs", icon: ScrollText, perm: "page_logs" },
   { title: "Backup & Restore", href: "/backup", icon: DatabaseBackup, perm: "page_backup" },
-  { title: "System Monitor", href: "/monitor", icon: Activity, perm: "page_monitor" },
 ]
 
 // A route fallback cannot cover a pending root-layout session check. Keep a

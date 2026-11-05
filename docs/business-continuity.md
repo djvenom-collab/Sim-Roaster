@@ -74,7 +74,6 @@ If this document and the JSON files ever disagree, the JSON files win. Update bo
 | Training attachments | 2 | Blob |
 | Health endpoint | 2 | Vercel |
 | Email notifications | 3 | Resend |
-| Monitor page (synthetic metrics only, not real telemetry) | 4 | Blob |
 
 ## 3. Recovery objectives (RTO / RPO)
 

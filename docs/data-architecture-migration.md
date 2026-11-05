@@ -1,5 +1,10 @@
 # Sim-Roaster operational data architecture: assessment and migration plan
 
+> **Historical assessment:** counts, schema coverage and verification claims below
+> describe an earlier snapshot, not a current live inventory. The current staged
+> redesign and cutover gates are in [storage-redesign.md](./storage-redesign.md).
+> The synthetic monitor page/API has been removed; existing archive objects are retained.
+
 Status: **Plan only. Nothing irreversible has been executed.** Vercel Blob is still the
 live datastore. The PostgreSQL schema has been exercised only inside transactions
 that are always rolled back.
@@ -17,7 +22,7 @@ resilience objectives. It is engineering evidence, not a claim of certification.
 |---|---|---|---|
 | `sim-roster/state.json` | **All operational data** as one JSON document (31 slices, ~3.7 MB, version 9) | `PUT /api/state` (browser autosave), `POST /api/backup/restore`, `lib/autonoma/snapshot.ts` (test seeding) | `GET /api/state`, `/api/backup`, `lib/security/authz.ts` (role permission lookup), Autonoma |
 | `sim-roster/backups/*` | Point-in-time copies of `state.json` | `POST /api/backup` | `/api/backup` (list), restore, delete |
-| `sim-roster/monitor/*` | Uptime/health history | `/api/monitor` | `/api/monitor/history` |
+| `sim-roster/monitor/*` | Legacy simulated metric archives (retained) | None after monitor removal | None after monitor removal |
 | Training attachments | Uploaded files | `/api/training-attachments/upload` | `.../file`, `.../delete` |
 
 Live profile from `scripts/migration/validate-snapshot.mjs` (read-only): 32 staff,
@@ -47,8 +52,8 @@ authoritative transactional store for operational data.** The data is strongly
 relational (runs → required positions → assignments → staff/qualifications), is
 edited concurrently, and needs referential integrity, row-level concurrency
 control, and server-side audit trails that a single document cannot provide.
-Blob remains appropriate for binary attachments, monitor history, and immutable
-backup archives.
+Blob remains appropriate for binary attachments and immutable backup archives.
+Legacy simulated monitor history is retained pending an explicit retention decision.
 
 ---
 
