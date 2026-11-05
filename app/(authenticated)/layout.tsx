@@ -2,7 +2,7 @@
 // checks cookie presence only; stale/invalid cookies must not reach a page
 // without the StoreProvider it requires. API routes retain their own authz.
 import { Suspense } from "react"
-import { headers } from "next/headers"
+import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 import { auth } from "@/lib/auth"
 import { StoreProvider } from "@/lib/store"
@@ -24,8 +24,14 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
   if (!session?.user) redirect("/login")
   const account = session.user as { name?: string; email?: string; appRole?: string }
 
+  const rehearsalBranch = process.env.VERCEL_ENV === "preview" && process.env.VERCEL_GIT_COMMIT_REF === "storage/migration-candidate"
+  const candidate = rehearsalBranch && account.appRole === "Admin" && (await cookies()).get("migration_candidate")?.value === "1"
+
   return (
     <StoreProvider
+      key={candidate ? "candidate" : "blob"}
+      stateEndpoint={candidate ? "/api/admin/candidate-state" : "/api/state"}
+      readOnly={rehearsalBranch && !candidate}
       initialRole={normalizeRole(account.appRole)}
       authName={account.name}
       authEmail={account.email}
@@ -34,6 +40,8 @@ export default async function AuthenticatedLayout({ children }: { children: Reac
         <AppSidebar />
         <SidebarInset>
           <TopBar />
+          {rehearsalBranch && !candidate && <p role="status" className="border p-3 text-sm font-semibold">SOURCE VIEW — read only. Enter the isolated roster copy to test saves. Shared-storage writes are blocked across this branch.</p>}
+          {candidate && <p role="status" className="border p-3 text-sm font-semibold">ISOLATED DATABASE COPY — rehearsal only. Operational roster is unchanged. Do not use backup/restore, messaging or file actions here.</p>}
           <div className="flex flex-1 flex-col gap-6 p-4 md:p-6">
             <Suspense fallback={null}>
               <PageAccessGuard>{children}</PageAccessGuard>

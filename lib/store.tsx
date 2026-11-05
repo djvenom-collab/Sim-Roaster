@@ -1,4 +1,5 @@
 "use client"
+import { sliceFingerprints, changedSlices } from "./slice-diff"
 
 /* ===========================================================================
  * STORE — the app's central "brain" (all live data + every action)
@@ -336,6 +337,8 @@ export function StoreProvider({
   initialRole,
   authName,
   authEmail,
+  stateEndpoint = "/api/state",
+  readOnly = false,
 }: {
   children: ReactNode
   // The role of the signed-in account. Drives the whole permission system.
@@ -343,6 +346,8 @@ export function StoreProvider({
   // The signed-in account's identity, shown in the top bar.
   authName?: string
   authEmail?: string
+  stateEndpoint?: "/api/state" | "/api/admin/candidate-state"
+  readOnly?: boolean
 }) {
   const [currentRole, setCurrentRole] = useState<RoleCode>(initialRole ?? "Admin")
   const savedProgram = useBrowserStorage(ACTIVE_PROGRAM_KEY)
@@ -355,6 +360,7 @@ export function StoreProvider({
   // with the seed during the initial load.
   const hydratedRef = useRef(false)
   const [hydrated, setHydrated] = useState(false)
+  const candidateHydrationSkipped = useRef(false)
   const [notificationsReady, setNotificationsReady] = useState(false)
   // Only allow saving once we've SAFELY established the snapshot state (loaded an
   // existing one, or confirmed the store is empty). If the load errors, we stay
@@ -363,18 +369,23 @@ export function StoreProvider({
   // Revision (ETag) of the snapshot this session last read or wrote. Sent as
   // If-Match so a save never silently overwrites another session's changes.
   const revisionRef = useRef<string | null>(null)
+  const sliceBaselineRef = useRef<Map<string,string | undefined>>(new Map())
 
   const saveQueueRef = useRef<ReturnType<typeof createLatestSaveQueue<PersistedState>> | null>(null)
   useEffect(() => {
     const queue = createLatestSaveQueue<PersistedState>(async (snapshot) => {
-      if (!canSaveRef.current) return false
+      if (readOnly || !canSaveRef.current) return false
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (revisionRef.current) headers["If-Match"] = revisionRef.current
-      // Serialize only the snapshot actually being sent, not superseded edits.
-      const res = await fetch("/api/state", { method: "PUT", headers, body: JSON.stringify(snapshot) })
+      // Candidate saves transfer only changed domains, not the whole history.
+      // The repository treats omitted domains as unchanged under the same CAS.
+      const delta = stateEndpoint !== "/api/state" ? changedSlices(snapshot as unknown as Record<string,unknown>,sliceBaselineRef.current) : null
+      if (delta && Object.keys(delta.patch).length===0) return true
+      const res = await fetch(stateEndpoint, { method: "PUT", headers, body: JSON.stringify(delta?.patch ?? snapshot) })
       if (res.ok) {
         const body = (await res.json()) as { revision?: string | null }
         revisionRef.current = body.revision ?? res.headers.get("ETag") ?? revisionRef.current
+        if (delta) sliceBaselineRef.current = delta.fingerprints
         return true
       }
       canSaveRef.current = false
@@ -394,7 +405,7 @@ export function StoreProvider({
       queue.stop()
       saveQueueRef.current = null
     }
-  }, [])
+  }, [stateEndpoint, readOnly])
 
   const setActiveProgram = useCallback((p: ProgramView) => {
     setActiveProgramState(p)
@@ -501,7 +512,7 @@ export function StoreProvider({
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch("/api/state", { cache: "no-store" })
+        const res = await fetch(stateEndpoint, { cache: "no-store" })
         const json = (await res.json()) as {
           state: Partial<PersistedState> | null
           revision?: string | null
@@ -510,7 +521,8 @@ export function StoreProvider({
         if (cancelled) return
         revisionRef.current = json?.revision ?? null
         const snap = json?.state
-        if (snap && (snap as { __autonoma?: boolean }).__autonoma === true) {
+        if (stateEndpoint !== "/api/state" && snap) sliceBaselineRef.current = sliceFingerprints(snap as Record<string,unknown>)
+        if (snap && ((snap as { __autonoma?: boolean }).__autonoma === true || (stateEndpoint !== "/api/state" && (snap as { __candidate?: boolean }).__candidate === true))) {
           // ── AUTONOMA test-run snapshot ────────────────────────────────────
           // An isolated per-run snapshot (lib/autonoma/run-store.ts). Apply it
           // VERBATIM: no dedupe / version-reseed / history-backfill, which would
@@ -737,7 +749,7 @@ export function StoreProvider({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [stateEndpoint])
 
   // ── Durable snapshot: SAVE ───────��────────────────────────────────────────
   // Any change to any persisted slice schedules a debounced write of the WHOLE
@@ -745,7 +757,13 @@ export function StoreProvider({
   // setters, this single effect captures every edit on every page — no per-page
   // wiring needed. Idle until hydration is done and saving is deemed safe.
   useEffect(() => {
-    if (!hydrated || !hydratedRef.current || !canSaveRef.current) return
+    if (readOnly || !hydrated || !hydratedRef.current || !canSaveRef.current) return
+    // Candidate loads verbatim: no migration/backfill needs persisting. Avoid
+    // a load-only write racing with the next page's fresh revision on reload.
+    if (stateEndpoint !== "/api/state" && !candidateHydrationSkipped.current) {
+      candidateHydrationSkipped.current = true
+      return
+    }
     const snapshot: PersistedState = {
       version: SNAPSHOT_VERSION,
       staff: staffData,
@@ -787,6 +805,8 @@ export function StoreProvider({
     return () => clearTimeout(id)
   }, [
     hydrated,
+    stateEndpoint,
+    readOnly,
     staffData,
     positionsData,
     simulatorsData,
@@ -1119,7 +1139,7 @@ export function StoreProvider({
   const log = useCallback((action: AuditAction, detail: string) => {
     setAuditLogs((prev) => [
       {
-        id: `al-${Date.now()}`,
+        id: `al-${crypto.randomUUID()}`,
         timestamp: `${todayISO()} ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}`,
         user: currentUserRef.current.name,
         action,
@@ -2361,7 +2381,7 @@ export function StoreProvider({
     markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
   ])
 
-  return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
+  return <StoreCtx.Provider value={value}>{stateEndpoint !== "/api/state" && !hydrated ? <p role="status" className="p-6">Loading isolated database copy…</p> : children}</StoreCtx.Provider>
 }
 
 export function useStore() {
