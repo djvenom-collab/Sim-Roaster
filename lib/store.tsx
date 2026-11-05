@@ -512,7 +512,7 @@ export function StoreProvider({
         if (cancelled) return
         revisionRef.current = json?.revision ?? null
         const snap = json?.state
-        if (snap && (snap as { __autonoma?: boolean }).__autonoma === true) {
+        if (snap && ((snap as { __autonoma?: boolean }).__autonoma === true || (stateEndpoint !== "/api/state" && (snap as { __candidate?: boolean }).__candidate === true))) {
           // ── AUTONOMA test-run snapshot ────────────────────────────────────
           // An isolated per-run snapshot (lib/autonoma/run-store.ts). Apply it
           // VERBATIM: no dedupe / version-reseed / history-backfill, which would

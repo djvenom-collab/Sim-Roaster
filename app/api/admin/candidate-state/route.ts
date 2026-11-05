@@ -19,7 +19,7 @@ export async function GET(request:Request){
     pool=migrationTestPool()
     const result=await candidateStore(pool).read()
     if(!result.state)return jsonError(409,"copy_required")
-    return NextResponse.json(result,{headers:{"Cache-Control":"no-store"}})
+    return NextResponse.json({...result,state:{...result.state,__candidate:true}},{headers:{"Cache-Control":"no-store"}})
   }catch{return jsonError(503,"candidate_unavailable")}finally{await pool?.end()}
 }
 export async function PUT(request:Request){

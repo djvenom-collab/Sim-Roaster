@@ -84,6 +84,7 @@ export function candidateStore(pool: Pool) {
         else await c.query("DELETE FROM roster_candidate.record WHERE slice=$1 AND key=$2",[old.slice,old.key])
         changed++
       }
+      if(changed===0){await c.query("COMMIT");return {revision:expected,changed:0}}
       // Reject malformed timestamps rather than archive in an arbitrary order.
       await c.query(`WITH ranked AS (SELECT key,row_number() OVER(ORDER BY (payload->>'sentAt')::timestamptz DESC,ordinal,key) AS n FROM roster_candidate.record WHERE slice='notifications' AND NOT archived) UPDATE roster_candidate.record r SET archived=true FROM ranked v WHERE r.slice='notifications' AND r.key=v.key AND v.n>500`)
       const revision=String(BigInt(expected)+BigInt(1))
