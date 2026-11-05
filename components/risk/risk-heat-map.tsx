@@ -45,7 +45,7 @@ export function RiskHeatMap({
                     role="gridcell"
                     type="button"
                     disabled={n === 0}
-                    aria-pressed={active}
+                    aria-selected={active}
                     aria-label={`Likelihood ${l}, impact ${i}, score ${score(l, i)}: ${n} risk${n === 1 ? "" : "s"}`}
                     onClick={() => onSelect(active ? null : { likelihood: l, impact: i })}
                     className={cn(

@@ -14,7 +14,7 @@
  *   - Clicking a day navigates to /daily for that date.
  * Everything shown respects the active RADAR/TOWER program.
  * =========================================================================== */
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronLeft, ChevronRight } from "lucide-react"
 import { Card } from "@/components/ui/card"
@@ -40,21 +40,17 @@ export default function MonthlyPage() {
   const store = useStore()
   const [cursor, setCursor] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1))
   const [filters, setFilters] = useState<CalendarFilters>(emptyFilters)
-  const year = cursor.getFullYear()
+  const clampedYear = clampYearToRange(cursor.getFullYear(), store.yearRange)
+  if (clampedYear !== cursor.getFullYear()) {
+    setCursor(new Date(clampedYear, cursor.getMonth(), 1))
+  }
+  const year = clampedYear
   const month = cursor.getMonth()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const data = useCalendarData(filters, {
     start: toISO(new Date(year, month, 1)),
     end: toISO(new Date(year, month, daysInMonth)),
   })
-
-  // Keep the visible month inside the top-bar YEAR slicer (and re-clamp if the
-  // slicer changes or navigation steps past a boundary).
-  useEffect(() => {
-    const y = cursor.getFullYear()
-    const cy = clampYearToRange(y, store.yearRange)
-    if (cy !== y) setCursor(new Date(cy, cursor.getMonth(), 1))
-  }, [cursor, store.yearRange])
 
   const startOffset = (new Date(year, month, 1).getDay() + 6) % 7
   const cells: (number | null)[] = [

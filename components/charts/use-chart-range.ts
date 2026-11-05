@@ -8,7 +8,7 @@
  * current calendar year. Charts feed `range` into their data helpers and pass
  * `value`/`setValue` straight into <ChartShell>.
  * =========================================================================== */
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { defaultYear, type ChartRange } from "@/lib/analytics"
 import { useStore } from "@/lib/store"
 import { YTD_VALUE } from "./chart-shell"
@@ -29,12 +29,9 @@ export function useChartRange(years: number[]) {
   // Keep the per-chart selection valid as the global slicer changes: if the
   // currently-picked year drops out of the allowed range, snap to the newest
   // year still in range. "YTD" is left alone (it anchors to the current year).
-  useEffect(() => {
-    if (value === YTD_VALUE) return
-    if (years.length > 0 && !years.includes(Number(value))) {
-      setValue(String(years[0]))
-    }
-  }, [years, value])
+  if (value !== YTD_VALUE && years.length > 0 && !years.includes(Number(value))) {
+    setValue(String(years[0]))
+  }
 
   const range: ChartRange =
     value === YTD_VALUE

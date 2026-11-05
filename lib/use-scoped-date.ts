@@ -13,7 +13,7 @@
  * years, so the top-bar year filter reaches operational pages too — not just
  * the analytics/report surfaces.
  * =========================================================================== */
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import { useStore } from "./store"
 import { clampISOToYearRange } from "./retention"
 import { todayISO } from "./dates"
@@ -22,10 +22,8 @@ export function useScopedDate(initial?: string) {
   const { yearRange } = useStore()
   const [date, setDateRaw] = useState(() => clampISOToYearRange(initial ?? todayISO(), yearRange))
 
-  // Re-clamp when the year slicer changes so the selected day follows it.
-  useEffect(() => {
-    setDateRaw((d) => clampISOToYearRange(d, yearRange))
-  }, [yearRange])
+  const clampedDate = clampISOToYearRange(date, yearRange)
+  if (clampedDate !== date) setDateRaw(clampedDate)
 
   const setDate = useCallback(
     (next: string | ((prev: string) => string)) => {
@@ -37,5 +35,5 @@ export function useScopedDate(initial?: string) {
     [yearRange],
   )
 
-  return [date, setDate] as const
+  return [clampedDate, setDate] as const
 }

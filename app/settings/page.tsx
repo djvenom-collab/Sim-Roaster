@@ -10,7 +10,7 @@
  * The starting values come from lib/dim/sample.ts and lib/sample-data.ts; this
  * page is the in-app way to change them at runtime.
  * =========================================================================== */
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 import { useStore } from "@/lib/store"
 import { programDisplay } from "@/lib/program"
@@ -73,9 +73,7 @@ export default function SettingsPage() {
   // Program-bearing DIM lists (positions, simulators, assignments) follow the
   // global program scope; shared lists (slots, holidays, quals) always show all.
   const posPrograms = Array.from(new Set(store.scopedPositions.map((p) => p.program).filter(Boolean)))
-  useEffect(() => {
-    if (posPrograms.length && !posPrograms.includes(posProgram)) setPosProgram(posPrograms[0])
-  }, [posPrograms, posProgram])
+  if (posPrograms.length && !posPrograms.includes(posProgram)) setPosProgram(posPrograms[0])
 
   const scopeHint =
     store.activeProgram === "ALL" ? "all programs" : `${programDisplay(store.activeProgram)} only`

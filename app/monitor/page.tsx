@@ -266,32 +266,23 @@ function ArchivePanel() {
   const { data: listData, isLoading: listLoading } =
     useSWR<{ files: ArchiveFile[] }>("/api/monitor/history", fetcher, { revalidateOnFocus: false })
 
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-  const [archiveRows, setArchiveRows]   = useState<MetricSnapshot[]>([])
-  const [archiveLoading, setArchiveLoading] = useState(false)
-  const [archiveError, setArchiveError] = useState<string | null>(null)
-
+  const [dateChoice, setSelectedDate] = useState<string | null>(null)
   const files = listData?.files ?? []
-
-  // Auto-select the most recent date when the list loads
-  useEffect(() => {
-    if (files.length > 0 && !selectedDate) setSelectedDate(files[0].date)
-  }, [files, selectedDate])
-
-  // Load archive data when date changes
-  useEffect(() => {
-    if (!selectedDate) return
-    setArchiveLoading(true)
-    setArchiveError(null)
-    fetch(`/api/monitor/history?date=${selectedDate}`)
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(d.error)
-        setArchiveRows((d.snapshots as MetricSnapshot[]).reverse())
-      })
-      .catch((e) => setArchiveError(e.message))
-      .finally(() => setArchiveLoading(false))
-  }, [selectedDate])
+  const selectedDate = dateChoice ?? files[0]?.date ?? null
+  // SWR keys each archive response by date. A slow response for the previous
+  // selection cannot overwrite the currently selected day's rows.
+  const { data: archiveData, error: archiveError, isLoading: archiveLoading } =
+    useSWR<{ snapshots: MetricSnapshot[] }>(
+      selectedDate ? `/api/monitor/history?date=${encodeURIComponent(selectedDate)}` : null,
+      async (url: string) => {
+        const response = await fetch(url)
+        const data = await response.json()
+        if (!response.ok || data.error) throw new Error(data.error || "Archive load failed")
+        return data
+      },
+      { revalidateOnFocus: false },
+    )
+  const archiveRows = useMemo(() => [...(archiveData?.snapshots ?? [])].reverse(), [archiveData])
 
   // Chart data for the archive day
   const archiveChartData = useMemo(() =>
@@ -366,7 +357,7 @@ function ArchivePanel() {
 
       {archiveError && (
         <div className="rounded-md border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-          {archiveError}
+          {archiveError.message}
         </div>
       )}
 

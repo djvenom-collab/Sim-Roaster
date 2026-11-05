@@ -13,7 +13,7 @@
  * comes from useCalendarData (lib/use-calendar-data.ts) and respects the active
  * RADAR/TOWER program.
  * =========================================================================== */
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { ChevronLeft, ChevronRight, GraduationCap, CalendarOff, Plane } from "lucide-react"
 import { Card } from "@/components/ui/card"
@@ -51,18 +51,17 @@ export default function WeeklyPage() {
     end: toISO(addDays(start, 6)),
   })
 
-  // Keep the visible week inside the top-bar YEAR slicer: if navigation (or a
-  // change to the slicer) pushes the week outside the range, snap it back to the
-  // nearest allowed year. Fires after navigation too, so you can't step past it.
-  useEffect(() => {
-    const y = start.getFullYear()
-    const cy = clampYearToRange(y, store.yearRange)
-    if (cy !== y) {
-      const moved = new Date(start)
-      moved.setFullYear(cy)
-      setStart(weekStart(moved))
-    }
-  }, [start, store.yearRange])
+  // Adjust before children render rather than committing an out-of-range week
+  // and correcting it in an effect. Keep the Monday-start behavior.
+  const cy = clampYearToRange(start.getFullYear(), store.yearRange)
+  if (cy !== start.getFullYear()) {
+    const moved = new Date(start)
+    moved.setFullYear(cy)
+    const next = weekStart(moved)
+    // January's Monday may fall in the previous year; advance to the first
+    // Monday in-range instead of repeatedly setting an out-of-range week.
+    setStart(next.getFullYear() < store.yearRange.start ? addDays(next, 7) : next)
+  }
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(start, i))
   const end = days[6]
