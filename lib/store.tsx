@@ -357,6 +357,7 @@ export function StoreProvider({
   // with the seed during the initial load.
   const hydratedRef = useRef(false)
   const [hydrated, setHydrated] = useState(false)
+  const candidateHydrationSkipped = useRef(false)
   const [notificationsReady, setNotificationsReady] = useState(false)
   // Only allow saving once we've SAFELY established the snapshot state (loaded an
   // existing one, or confirmed the store is empty). If the load errors, we stay
@@ -748,6 +749,12 @@ export function StoreProvider({
   // wiring needed. Idle until hydration is done and saving is deemed safe.
   useEffect(() => {
     if (!hydrated || !hydratedRef.current || !canSaveRef.current) return
+    // Candidate loads verbatim: no migration/backfill needs persisting. Avoid
+    // a load-only write racing with the next page's fresh revision on reload.
+    if (stateEndpoint !== "/api/state" && !candidateHydrationSkipped.current) {
+      candidateHydrationSkipped.current = true
+      return
+    }
     const snapshot: PersistedState = {
       version: SNAPSHOT_VERSION,
       staff: staffData,
@@ -789,6 +796,7 @@ export function StoreProvider({
     return () => clearTimeout(id)
   }, [
     hydrated,
+    stateEndpoint,
     staffData,
     positionsData,
     simulatorsData,
