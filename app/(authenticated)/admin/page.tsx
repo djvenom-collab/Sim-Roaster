@@ -16,6 +16,7 @@ import { useStore } from "@/lib/store"
 import { can, PERMISSION_GROUPS, PERMISSION_LABELS, type Permission } from "@/lib/permissions"
 import { PageHeader, EmptyState } from "@/components/shared"
 import { UserEditorDialog } from "@/components/user-editor-dialog"
+import { StorageAssessmentPanel } from "@/components/storage-assessment-panel"
 import { ArchivePanel } from "@/components/archive-panel"
 import { ServerAuditLog } from "@/components/server-audit-log"
 import { RiskRegisterPanel } from "@/components/risk/risk-register-panel"
@@ -104,6 +105,7 @@ export default function AdminPage() {
           <TabsTrigger value="matrix">Permission matrix</TabsTrigger>
           <TabsTrigger value="audit">Audit log</TabsTrigger>
           <TabsTrigger value="archive">Data archive</TabsTrigger>
+          {store.currentRole === "Admin" && <TabsTrigger value="storage">Storage assessment</TabsTrigger>}
           {store.currentRole === "Admin" ? <TabsTrigger value="risks">Risk register</TabsTrigger> : null}
         </TabsList>
 
@@ -334,6 +336,8 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {store.currentRole === "Admin" && <TabsContent value="storage" className="mt-4"><StorageAssessmentPanel /></TabsContent>}
 
         <TabsContent value="archive" className="mt-4">
           <ArchivePanel />
