@@ -37,5 +37,10 @@ export async function PUT(request:Request){
     await pool.query(candidateDDL)
     const report=await candidateStore(pool).write(state as Record<string,unknown>,expected,actor.userId)
     return NextResponse.json({ok:true,...report},{headers:{"Cache-Control":"no-store"}})
-  }catch(error){return jsonError(error instanceof CandidateConflict?409:error instanceof CandidateInvalidState?422:503,error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"invalid_state":"candidate_write_failed")}finally{await pool?.end()}
+  }catch(error){
+    // Never log driver messages/queries: they can embed private record values.
+    const code=error && typeof error==="object" && "code" in error ? String(error.code) : ""
+    console.error("[candidate-state] write failed", {category:error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"validation":"database",sqlState:/^[0-9A-Z]{5}$/.test(code)?code:"unavailable"})
+    return jsonError(error instanceof CandidateConflict?409:error instanceof CandidateInvalidState?422:503,error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"invalid_state":"candidate_write_failed")
+  }finally{await pool?.end()}
 }
