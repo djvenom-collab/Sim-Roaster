@@ -12,6 +12,7 @@ import {
   withAudit,
   type AuditEventInput,
 } from "@/lib/audit/log"
+import { snapshotResponse } from "@/lib/repository/snapshot-response"
 import { diffSnapshots } from "@/lib/audit/diff"
 import { SNAPSHOT_VERSION } from "@/lib/persisted-state"
 import { RUN_COOKIE, AUTONOMA_MARKER, runSnapshotPath } from "@/lib/autonoma/run-store"
@@ -71,15 +72,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ state, revision: null }, { headers: { "Cache-Control": "no-store" } })
     }
 
-    const { state, revision } = await stateRepository.read()
-    const headers: Record<string, string> = { "Cache-Control": "no-store" }
-    if (revision) headers.ETag = revision
-    // No snapshot yet → tell the client to seed from sample data.
-    return NextResponse.json({ state, revision }, { headers })
+    const snapshot = await stateRepository.readStream()
+    if (snapshot) return snapshotResponse(snapshot.stream, snapshot.revision)
+    // Only a confirmed missing snapshot can enable first-time seeding.
+    return NextResponse.json({ state: null, revision: null }, { headers: { "Cache-Control": "no-store" } })
   } catch (error) {
     console.error("[state] GET error:", (error as Error).message)
     // The client stays read-only on error, so it never overwrites real data.
-    return NextResponse.json({ state: null, revision: null, error: "read_failed" }, { status: 200 })
+    return NextResponse.json({ state: null, revision: null, error: "read_failed" }, { status: 200, headers: { "Cache-Control": "no-store" } })
   }
 }
 
