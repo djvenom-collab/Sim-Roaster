@@ -38,7 +38,7 @@ const store = {
   ],
   logImport: (...args) => { saved = args },
 }
-const { default: ImportPage } = load("../../app/import/page.tsx", (name) => {
+const { default: ImportPage } = load("../../app/(authenticated)/import/page.tsx", (name) => {
   if (name === "react") return { useState: () => {
     const index = stateIndex++
     return [states[index], (next) => { states[index] = typeof next === "function" ? next(states[index]) : next }]

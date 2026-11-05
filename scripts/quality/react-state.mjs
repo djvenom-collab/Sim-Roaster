@@ -62,7 +62,7 @@ for (const planner of ["monthly", "weekly"]) {
   let slots = [new Date(2020, 0, 1), {}]
   let index = 0
   let changed = false
-  const { default: renderPlanner } = load(`../../app/${planner}/page.tsx`, (name) => {
+  const { default: renderPlanner } = load(`../../app/(authenticated)/${planner}/page.tsx`, (name) => {
     if (name === "react") return { useState: () => {
       const slot = index++
       return [slots[slot], (next) => { slots[slot] = next; changed = true }]
