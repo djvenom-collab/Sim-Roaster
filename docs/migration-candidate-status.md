@@ -1,58 +1,55 @@
 # Single working migration candidate — DO NOT MERGE
 
-Branch: storage/migration-candidate. This replaces the preparation-PR merge
-cycle with one draft. Do not merge/redeploy intermediate revisions.
+Branch: storage/migration-candidate. All implementation and fixes stay in PR #24;
+no intermediate merge or production release is required.
 
-## Infrastructure verified
+## Isolation and source evidence
 
-An isolated Neon resource named sim-roster-migration-test was provisioned on
-Free (free_v3), with auth disabled. Connected only to Preview using the
-MIGRATION_TEST prefix; existing credentials removed: none. Production env
-variables untouched. No plan upgrade or paid resource selected.
+Free Neon test resource, Preview-only MIGRATION_TEST-prefixed credentials.
+Production credentials and operational Blob persistence are unchanged. Dedicated
+pool refuses production/wrong branch/missing config or matching database endpoint.
+Owner approved a private roster copy. That copy passed complete source-value
+comparison before commit (27,205 records / 32 slices); no attachment bytes copied.
+Initial evidence is retained in the test database independently of candidate edits.
 
-Preview-only /migration-test and Admin POST /api/admin/migration-rehearsal are
-hard-gated to this branch + Preview. Test pool requires explicit test credentials,
-normalizes pooled/unpooled endpoint identity, rejects a target matching the
-existing database, and never falls back to DATABASE_URL. Local isolation tests
-cover production/wrong branch/missing/same target rejection. The test creates
-only synthetic records in a unique temporary schema and removes that schema.
+The Admin-only preview opt-in loads the separate database copy verbatim. Other
+mutation endpoints are blocked while the candidate cookie is set, including old
+state API tabs. Never treat this flag as a production backend switch.
 
-Real deployed Neon rehearsal passed with two Pool connections: NOWAIT table-lock
-contention rejects a second writer while first holds the lock; serialized sends
-retain 502 total / 500 active / 2 archived; recipient-predicated mutation affects
-one owner; rollback restores deleted-state counts; attachment JSON is preserved.
-This is not a load test, sustained concurrency proof or production migration.
+## Implemented, with limits
 
-## Repository in progress (not connected to app)
+Record-oriented JSONB repository: domain/key/order rows, transactional revision
+lock, per-record diff writes, archived notification overflow, initial-copy backup
+and recovery that preserves the pre-restore candidate in another backup.
+Omitted domains are retained; explicit empty arrays delete the submitted domain.
+Changing a domain's container kind requires an explicit migration.
 
-candidate-store.ts is a transitional record-oriented JSONB prototype with
-slice/key/order columns, revision lock, per-record diff writes, notification
-overflow preservation and transaction-local change counts. Tests use PGlite;
-no app imports or runtime selection. It is **not** the normalized/FK-complete
-operational schema. It does not yet supply complete production authorization,
-full audit history/chain, per-domain APIs, archive UI, backup/restore or all
-snapshot omission/reordering semantics. The change table is not a replacement
-for audit.event. No runtime backend switch has been added.
+Candidate writes now require atomic before/after evidence in an independent,
+hash-linked audit table. Test-induced audit failure rolls back data and revision.
+This is rehearsal evidence, not integration with the existing production audit
+viewer/permissions or a tamper-proof store against the database owner. Existing
+candidate edits before this table was introduced have summary evidence only.
 
-## Data decision before real-data rehearsal
+Synthetic local tests cover parity, 500-active retention, partial writes, empty
+slices, one-record diffs, stale revision rejection, invalid-write rollback,
+audit-chain recomputation, mandatory-audit failure and backup recovery. Earlier
+real Neon tests proved separate connection locking and synthetic archive writes.
+Those tests do not replace verifying the latest preview and actual user workflows.
 
-Owner must choose a private copy of the current operational snapshot in the
-isolated resource versus an anonymized copy. Until that choice, test only
-synthetic records; do not import personal roster/message data or fetch real
-attachment bytes for rehearsal. Either choice leaves production untouched.
-Do not ask for database passwords or snapshot contents in chat. Counts from
-the aggregate report are not the full migration input.
+## Current verification gate
 
-## Remaining required work in THIS draft
+An interrupted browser run left save/reload verification incomplete. A temporary
+share-link lock also prevented reopening that exact deployment on resumption.
+The latest commit must be verified on its own READY preview; no success is inferred
+from a previous revision or build result. Do not merge yet.
 
-Complete field coverage, identity/permission-compatible demo behavior,
-normalized or explicitly agreed record model, record/date scoped APIs and
-client integration; preserve server validation, CAS/conflicts and atomic
-audit; remove implicit notification truncation only when archive writes are
-durable. Verify full value parity, representative user workflows, isolated
-backup/restore and preservation of post-cutover changes. No final review or
-production migration approval should be requested before these gates pass.
+## Still required before production approval
 
-Production still uses Blob. Archiving is not active. A ready preview does not
-mean a finished candidate. Infrastructure setup and the synthetic test do not
-constitute migration of the app.
+Full per-domain server validation/permissions, operationally supported record
+model, bounded/date-scoped APIs and client reads/writes, archive UI, production
+audit integration, representative demo-role workflows, deployed recovery and
+post-cutover-change preservation, measurements and final cutover/rollback plan.
+Client snapshot bridging is still transitional, not a completed storage redesign.
+
+Production still uses Blob. No live migration, automatic archiving activation,
+attachment relocation or old-data deletion has occurred.

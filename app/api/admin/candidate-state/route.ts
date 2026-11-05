@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { authorize, jsonError } from "@/lib/security/authz"
 import { migrationTestPool } from "@/lib/repository/migration-test"
-import { candidateStore, CandidateConflict } from "@/lib/repository/candidate-store"
+import { candidateDDL, candidateStore, CandidateConflict, CandidateInvalidState } from "@/lib/repository/candidate-store"
 
 export const dynamic="force-dynamic"
 export const maxDuration=120
@@ -34,7 +34,8 @@ export async function PUT(request:Request){
     const state:unknown=JSON.parse(text)
     if(!state||typeof state!=="object"||Array.isArray(state))return jsonError(422,"invalid_state")
     pool=migrationTestPool()
+    await pool.query(candidateDDL)
     const report=await candidateStore(pool).write(state as Record<string,unknown>,expected,actor.userId)
     return NextResponse.json({ok:true,...report},{headers:{"Cache-Control":"no-store"}})
-  }catch(error){return jsonError(error instanceof CandidateConflict?409:503,error instanceof CandidateConflict?"conflict":"candidate_write_failed")}finally{await pool?.end()}
+  }catch(error){return jsonError(error instanceof CandidateConflict?409:error instanceof CandidateInvalidState?422:503,error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"invalid_state":"candidate_write_failed")}finally{await pool?.end()}
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { authorize,jsonError } from "@/lib/security/authz"
 import { migrationTestPool } from "@/lib/repository/migration-test"
-import { candidateStore,CandidateConflict } from "@/lib/repository/candidate-store"
+import { candidateDDL,candidateStore,CandidateConflict } from "@/lib/repository/candidate-store"
 export const dynamic="force-dynamic"
 export const maxDuration=120
 export async function POST(request:Request){
@@ -12,6 +12,7 @@ export async function POST(request:Request){
   let pool:ReturnType<typeof migrationTestPool>|undefined
   try{
     pool=migrationTestPool()
+    await pool.query(candidateDDL)
     const repo=candidateStore(pool)
     const current=await repo.read()
     const result=await repo.restoreInitial(current.revision,actor.ctx.userId)

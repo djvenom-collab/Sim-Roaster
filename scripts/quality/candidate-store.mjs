@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
+import { createHash } from 'node:crypto'
 import { PGlite } from '@electric-sql/pglite'
 import ts from 'typescript'
 const js=ts.transpileModule(readFileSync(new URL('../../lib/repository/candidate-store.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText
 const compiled={exports:{}}
-new Function('require','module','exports',js)((name)=>{if(name==='server-only')return {};if(name==='node:util')return {isDeepStrictEqual};throw Error(name)},compiled,compiled.exports)
+new Function('require','module','exports',js)((name)=>{if(name==='server-only')return {};if(name==='node:util')return {isDeepStrictEqual};if(name==='node:crypto')return {createHash};throw Error(name)},compiled,compiled.exports)
 const {candidateDDL,candidateStore,CandidateConflict}=compiled.exports
 const db=new PGlite()
 const pool={connect:async()=>({query:(...args)=>db.query(...args),release(){}})}
@@ -40,5 +41,30 @@ try{
  assert.equal((await repo.read()).revision,'3')
  await assert.rejects(()=>repo.restoreInitial('2','test'),CandidateConflict)
  assert.equal((await db.query("SELECT count(*)::int AS n FROM roster_candidate.backup WHERE id LIKE 'before-restore-%'")).rows[0].n,1)
+ // Partial writes preserve every omitted domain; explicit empty is deletion.
+ assert.equal((await repo.write({staff:[{id:'s',nested:{z:3}}]},'3','test')).revision,'4')
+ assert.equal((await repo.read(true)).state.notifications.length,502)
+ assert.deepEqual((await repo.read()).state.settings,source.settings)
+ assert.equal((await repo.write({newEmpty:[]},'4','test')).revision,'5')
+ assert.deepEqual((await repo.read()).state.newEmpty,[])
+ await assert.rejects(()=>repo.write({staff:{}},'5','test'),/kind change/)
+ assert.equal((await repo.read()).revision,'5')
+ const audit=(await db.query('SELECT actor,revision,previous_hash,event_hash,event FROM roster_candidate.audit ORDER BY id')).rows
+ let previous='genesis'
+ const canonical=v=>Array.isArray(v)?`[${v.map(canonical).join(',')}]`:v&&typeof v==='object'?`{${Object.entries(v).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,x])=>`${JSON.stringify(k)}:${canonical(x)}`).join(',')}}`:JSON.stringify(v)
+ for(const row of audit){
+   assert.equal(row.previous_hash,previous)
+   assert.equal(row.event_hash,createHash('sha256').update(canonical({actor:row.actor,revision:String(row.revision),previous,event:row.event})).digest('hex'))
+   previous=row.event_hash
+ }
+ const update=audit.find(a=>a.event.action==='state.save').event.changes.find(e=>e.slice==='staff')
+ assert.equal(update.before.nested.z,1)
+ assert.equal(update.after.nested.z,2)
+ // Mandatory audit failure rolls back payloads AND revision.
+ await db.exec('ALTER TABLE roster_candidate.audit RENAME TO audit_unavailable')
+ await assert.rejects(()=>repo.write({staff:[]},'5','test'))
+ assert.equal((await repo.read()).revision,'5')
+ assert.equal((await repo.read()).state.staff.length,1)
+ await db.exec('ALTER TABLE roster_candidate.audit_unavailable RENAME TO audit')
  console.log('PASS: record-organized candidate preserves fields/empty slices, archives 502 without loss, updates one changed record, rejects stale revision and rolls back failed writes')
 }finally{await db.close()}
