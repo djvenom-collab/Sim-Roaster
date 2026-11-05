@@ -35,5 +35,10 @@ try{
  invalid.staff.push({id:'s'})
  await assert.rejects(()=>repo.write(invalid,'3','test'),/Duplicate/)
  assert.equal((await repo.read()).revision,'3')
+ await repo.restoreInitial('3','test')
+ assert.deepEqual((await repo.read(true)).state,source)
+ assert.equal((await repo.read()).revision,'4')
+ await assert.rejects(()=>repo.restoreInitial('3','test'),CandidateConflict)
+ assert.equal((await db.query("SELECT count(*)::int AS n FROM roster_candidate.backup WHERE id LIKE 'before-restore-%'")).rows[0].n,1)
  console.log('PASS: record-organized candidate preserves fields/empty slices, archives 502 without loss, updates one changed record, rejects stale revision and rolls back failed writes')
 }finally{await db.close()}

@@ -122,5 +122,34 @@ export function candidateStore(pool: Pool) {
       return {revision:"1",records:next.length,slices:Object.keys(state).length,parity:true}
     } catch(e){await c.query("ROLLBACK");throw e} finally{c.release()}
   }
-  return {read,write,initialize}
+  async function restoreInitial(expected: string, actor: string) {
+    const c=await pool.connect()
+    try {
+      await c.query("BEGIN")
+      const meta=(await c.query("SELECT revision FROM roster_candidate.meta WHERE id=1 FOR UPDATE")).rows[0]
+      if(String(meta.revision)!==expected) throw new CandidateConflict()
+      const backup=(await c.query("SELECT payload FROM roster_candidate.backup WHERE id='initial-private-copy'")).rows[0]
+      if(!backup)throw new Error("Initial backup missing")
+      const before=await readFrom(c,true)
+      await c.query("INSERT INTO roster_candidate.backup(id,payload) VALUES($1,$2)",[`before-restore-${crypto.randomUUID()}`,JSON.stringify(before.state)])
+      await c.query("DELETE FROM roster_candidate.record")
+      await c.query("DELETE FROM roster_candidate.slice")
+      const state=backup.payload as CandidateSnapshot
+      for(const [name,value] of Object.entries(state))await c.query("INSERT INTO roster_candidate.slice VALUES($1,$2)",[name,Array.isArray(value)?"array":value&&typeof value==="object"?"object":"value"])
+      const next=records(state)
+      for(let i=0;i<next.length;i+=300){
+        const params:unknown[]=[]
+        const tuples=next.slice(i,i+300).map(r=>{const n=params.length;params.push(r.slice,r.key,r.ordinal,JSON.stringify(r.payload));return `($${n+1},$${n+2},$${n+3},$${n+4}::jsonb)`})
+        await c.query(`INSERT INTO roster_candidate.record(slice,key,ordinal,payload) VALUES ${tuples.join(",")}`,params)
+      }
+      if(!isDeepStrictEqual((await readFrom(c,true)).state,state))throw new Error("Restore parity failed")
+      await c.query(`WITH ranked AS (SELECT key,row_number() OVER(ORDER BY (payload->>'sentAt')::timestamptz DESC,ordinal,key) AS n FROM roster_candidate.record WHERE slice='notifications') UPDATE roster_candidate.record r SET archived=true FROM ranked v WHERE r.slice='notifications' AND r.key=v.key AND v.n>500`)
+      const revision=String(BigInt(expected)+BigInt(1))
+      await c.query("UPDATE roster_candidate.meta SET revision=$1 WHERE id=1",[revision])
+      await c.query("INSERT INTO roster_candidate.change(actor,revision,changed) VALUES($1,$2,$3)",[actor,revision,next.length])
+      await c.query("COMMIT")
+      return {revision,parity:true,previousCandidatePreserved:true,records:next.length}
+    }catch(e){await c.query("ROLLBACK");throw e}finally{c.release()}
+  }
+  return {read,write,initialize,restoreInitial}
 }

@@ -2363,7 +2363,7 @@ export function StoreProvider({
     markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
   ])
 
-  return <StoreCtx.Provider value={value}>{children}</StoreCtx.Provider>
+  return <StoreCtx.Provider value={value}>{stateEndpoint !== "/api/state" && !hydrated ? <p role="status" className="p-6">Loading isolated database copy…</p> : children}</StoreCtx.Provider>
 }
 
 export function useStore() {

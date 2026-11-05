@@ -154,7 +154,7 @@ export async function authorize(request: Request, options: AuthorizeOptions = {}
   // Rehearsal cookie isolates mutations, including old tabs using /api/state.
   if (process.env.VERCEL_ENV === "preview" && process.env.VERCEL_GIT_COMMIT_REF === "storage/migration-candidate" && /(?:^|;\s*)migration_candidate=1(?:;|$)/.test(request.headers.get("cookie") ?? "")) {
     const path = new URL(request.url).pathname
-    const allowed = ["/api/admin/candidate-state", "/api/admin/candidate-session"]
+    const allowed = ["/api/admin/candidate-state", "/api/admin/candidate-session", "/api/admin/candidate-recovery"]
     if (UNSAFE_METHODS.has(request.method.toUpperCase()) && !allowed.includes(path)) return { ok:false, response:jsonError(409,"isolated_rehearsal_action_blocked") }
   }
 
