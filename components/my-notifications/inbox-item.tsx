@@ -1,5 +1,6 @@
 "use client"
 
+import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -13,11 +14,15 @@ export function InboxItem({
   onOpen,
   onToggleFlag,
   onDelete,
+  selected = false,
+  onSelect,
 }: {
   n: NotificationRecord
   onOpen: () => void
   onToggleFlag: () => void
   onDelete: () => void
+  selected?: boolean
+  onSelect?: (checked: boolean) => void
 }) {
   const meta = channelMeta[n.channel]
   const Icon = meta.icon
@@ -32,6 +37,7 @@ export function InboxItem({
         n.flagged && "border-amber-500/40",
       )}
     >
+      {onSelect && <Checkbox className="mt-1.5" checked={selected} onCheckedChange={onSelect} aria-label={`Select notification: ${n.subject}`} />}
       <span
         aria-hidden
         className={cn("mt-2 size-2 shrink-0 rounded-full", unread ? "bg-primary" : "bg-transparent")}

@@ -37,6 +37,7 @@ import {
   type ReactNode,
 } from "react"
 import { useBrowserStorage, writeBrowserStorage } from "@/hooks/use-browser-storage"
+import { deleteOwnNotifications } from "./notification-actions"
 import { createLatestSaveQueue } from "./latest-save-queue"
 import * as seed from "./sample-data"
 import type {
@@ -294,6 +295,7 @@ interface StoreState {
   // Notification Viewer keeps its audit trail.
   toggleNotificationFlag: (id: string) => void
   deleteNotification: (id: string) => void
+  deleteNotifications: (ids: string[]) => void
   // notify-dirty tracking: flags a run/training whose schedule changed since the
   // affected people were last notified. Key format: `run:<id>` / `training:<id>`.
   markNotifyDirty: (key: string) => void
@@ -1224,6 +1226,12 @@ export function StoreProvider({
     (id: string) => updateOwnNotification(id, () => ({ deletedAt: new Date().toISOString() })),
     [updateOwnNotification],
   )
+
+  const deleteNotifications = useCallback((ids: string[]) => {
+    const me = currentUserRef.current.staffId
+    const deletedAt = new Date().toISOString()
+    setNotifications((prev) => deleteOwnNotifications(prev, ids, me, deletedAt))
+  }, [])
 
   // Flag a run/training as having changed since affected people were last notified.
   // The autosave effect persists notifyDirty to Blob automatically.
@@ -2318,6 +2326,7 @@ export function StoreProvider({
     markNotificationRead,
     toggleNotificationFlag,
     deleteNotification,
+    deleteNotifications,
     markNotifyDirty,
     markNotified,
     markNotifiedMany,
@@ -2348,7 +2357,7 @@ export function StoreProvider({
     addSlotTime, updateSlotTime, deleteSlotTime, addPublicHoliday, updatePublicHoliday, deletePublicHoliday,
     trainingGroupsData, addTrainingGroup, updateTrainingGroup, deleteTrainingGroup,
     log, logImport, notifications, recordNotification, recordNotifications, notificationsForStaff, markNotificationRead,
-    toggleNotificationFlag, deleteNotification,
+    toggleNotificationFlag, deleteNotification, deleteNotifications,
     markNotifyDirty, markNotified, markNotifiedMany, needsNotify,
   ])
 
