@@ -28,19 +28,24 @@ export async function PUT(request:Request){
   if(!expected||!/^\d+$/.test(expected))return jsonError(428,"revision_required")
   if(Number(request.headers.get("content-length")??0)>8*1024*1024)return jsonError(413,"too_large")
   let pool:ReturnType<typeof migrationTestPool>|undefined
+  let phase="read-body"
   try{
     const text=await request.text()
     if(new TextEncoder().encode(text).length>8*1024*1024)return jsonError(413,"too_large")
+    phase="parse-body"
     const state:unknown=JSON.parse(text)
     if(!state||typeof state!=="object"||Array.isArray(state))return jsonError(422,"invalid_state")
+    phase="test-pool"
     pool=migrationTestPool()
+    phase="schema"
     await pool.query(candidateDDL)
+    phase="write"
     const report=await candidateStore(pool).write(state as Record<string,unknown>,expected,actor.userId)
     return NextResponse.json({ok:true,...report},{headers:{"Cache-Control":"no-store"}})
   }catch(error){
     // Never log driver messages/queries: they can embed private record values.
     const code=error && typeof error==="object" && "code" in error ? String(error.code) : ""
-    console.error("[candidate-state] write failed", {category:error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"validation":"database",sqlState:/^[0-9A-Z]{5}$/.test(code)?code:"unavailable"})
+    console.error("[candidate-state] write failed", {phase,errorType:error instanceof TypeError?"TypeError":error instanceof SyntaxError?"SyntaxError":error instanceof RangeError?"RangeError":"Error",reason:error instanceof Error && ["Duplicate entity ID","Rehearsal disabled","Rehearsal configuration missing","Rehearsal target is not isolated"].includes(error.message)?error.message:"unspecified",category:error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"validation":"database",sqlState:/^[0-9A-Z]{5}$/.test(code)?code:"unavailable"})
     return jsonError(error instanceof CandidateConflict?409:error instanceof CandidateInvalidState?422:503,error instanceof CandidateConflict?"conflict":error instanceof CandidateInvalidState?"invalid_state":"candidate_write_failed")
   }finally{await pool?.end()}
 }

@@ -151,10 +151,10 @@ export function isSameOriginRequest(request: Request): boolean {
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 export async function authorize(request: Request, options: AuthorizeOptions = {}): Promise<AuthorizeResult> {
-  // Rehearsal cookie isolates mutations, including old tabs using /api/state.
-  if (process.env.VERCEL_ENV === "preview" && process.env.VERCEL_GIT_COMMIT_REF === "storage/migration-candidate" && /(?:^|;\s*)migration_candidate=1(?:;|$)/.test(request.headers.get("cookie") ?? "")) {
+  // Entire candidate branch is write-isolated, even before opt-in and in old tabs.
+  if (process.env.VERCEL_ENV === "preview" && process.env.VERCEL_GIT_COMMIT_REF === "storage/migration-candidate") {
     const path = new URL(request.url).pathname
-    const allowed = ["/api/admin/candidate-state", "/api/admin/candidate-session", "/api/admin/candidate-recovery"]
+    const allowed = ["/api/admin/candidate-state", "/api/admin/candidate-session", "/api/admin/candidate-recovery", "/api/admin/migration-copy", "/api/admin/migration-rehearsal"]
     if (UNSAFE_METHODS.has(request.method.toUpperCase()) && !allowed.includes(path)) return { ok:false, response:jsonError(409,"isolated_rehearsal_action_blocked") }
   }
 

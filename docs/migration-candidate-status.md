@@ -12,9 +12,9 @@ Owner approved a private roster copy. That copy passed complete source-value
 comparison before commit (27,205 records / 32 slices); no attachment bytes copied.
 Initial evidence is retained in the test database independently of candidate edits.
 
-The Admin-only preview opt-in loads the separate database copy verbatim. Other
-mutation endpoints are blocked while the candidate cookie is set, including old
-state API tabs. Never treat this flag as a production backend switch.
+The Admin-only preview opt-in loads the separate database copy verbatim. Shared mutation endpoints are blocked across the entire exact Preview branch,
+including before opt-in and in old state API tabs. Pre-opt-in StoreProvider is
+read-only to avoid scheduling shared autosaves. Never treat this flag as a production backend switch.
 
 ## Implemented, with limits
 
@@ -38,10 +38,18 @@ Those tests do not replace verifying the latest preview and actual user workflow
 
 ## Current verification gate
 
-An interrupted browser run left save/reload verification incomplete. A temporary
-share-link lock also prevented reopening that exact deployment on resumption.
-The latest commit must be verified on its own READY preview; no success is inferred
-from a previous revision or build result. Do not merge yet.
+Real deployed backup recovery passed at e3906f5 with 27,205 records, parity=true
+and previousCandidatePreserved=true. The isolated save still returned 503 at
+3d419d9; no successful save/reload is claimed. Sanitized diagnostics are being
+added; never log exception text that could contain private records or credentials.
+
+An isolation gap was observed: before opting in, the previous preview could
+schedule a shared PUT /api/state; one such request returned 200. Whether this
+was a no-op or changed data is unverified. Do not claim the source was unchanged
+or blindly restore it. The current branch-wide server guard and pre-opt-in
+read-only client address this path, with direct authorization regression tests.
+
+The latest commit must be verified on its own READY preview. Do not merge yet.
 
 ## Still required before production approval
 

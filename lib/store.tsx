@@ -337,6 +337,7 @@ export function StoreProvider({
   authName,
   authEmail,
   stateEndpoint = "/api/state",
+  readOnly = false,
 }: {
   children: ReactNode
   // The role of the signed-in account. Drives the whole permission system.
@@ -345,6 +346,7 @@ export function StoreProvider({
   authName?: string
   authEmail?: string
   stateEndpoint?: "/api/state" | "/api/admin/candidate-state"
+  readOnly?: boolean
 }) {
   const [currentRole, setCurrentRole] = useState<RoleCode>(initialRole ?? "Admin")
   const savedProgram = useBrowserStorage(ACTIVE_PROGRAM_KEY)
@@ -370,7 +372,7 @@ export function StoreProvider({
   const saveQueueRef = useRef<ReturnType<typeof createLatestSaveQueue<PersistedState>> | null>(null)
   useEffect(() => {
     const queue = createLatestSaveQueue<PersistedState>(async (snapshot) => {
-      if (!canSaveRef.current) return false
+      if (readOnly || !canSaveRef.current) return false
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (revisionRef.current) headers["If-Match"] = revisionRef.current
       // Serialize only the snapshot actually being sent, not superseded edits.
@@ -397,7 +399,7 @@ export function StoreProvider({
       queue.stop()
       saveQueueRef.current = null
     }
-  }, [stateEndpoint])
+  }, [stateEndpoint, readOnly])
 
   const setActiveProgram = useCallback((p: ProgramView) => {
     setActiveProgramState(p)
@@ -748,7 +750,7 @@ export function StoreProvider({
   // setters, this single effect captures every edit on every page — no per-page
   // wiring needed. Idle until hydration is done and saving is deemed safe.
   useEffect(() => {
-    if (!hydrated || !hydratedRef.current || !canSaveRef.current) return
+    if (readOnly || !hydrated || !hydratedRef.current || !canSaveRef.current) return
     // Candidate loads verbatim: no migration/backfill needs persisting. Avoid
     // a load-only write racing with the next page's fresh revision on reload.
     if (stateEndpoint !== "/api/state" && !candidateHydrationSkipped.current) {
@@ -797,6 +799,7 @@ export function StoreProvider({
   }, [
     hydrated,
     stateEndpoint,
+    readOnly,
     staffData,
     positionsData,
     simulatorsData,
