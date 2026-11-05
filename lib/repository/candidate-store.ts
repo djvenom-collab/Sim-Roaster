@@ -93,5 +93,34 @@ export function candidateStore(pool: Pool) {
       return {revision,changed}
     } catch(e){await c.query("ROLLBACK");throw e} finally{c.release()}
   }
-  return {read,write}
+  async function initialize(state: CandidateSnapshot, actor: string) {
+    const next = records(state)
+    const c = await pool.connect()
+    try {
+      await c.query("BEGIN")
+      await c.query("SET LOCAL statement_timeout='45s'")
+      const meta = (await c.query("SELECT initialized FROM roster_candidate.meta WHERE id=1 FOR UPDATE")).rows[0]
+      if (meta.initialized) throw new Error("Candidate already initialized")
+      for (const [name,value] of Object.entries(state)) await c.query("INSERT INTO roster_candidate.slice VALUES($1,$2)", [name,Array.isArray(value)?"array":value&&typeof value==="object"?"object":"value"])
+      for (let i=0;i<next.length;i+=300) {
+        const params: unknown[]=[]
+        const tuples=next.slice(i,i+300).map(r=>{
+          const n=params.length
+          params.push(r.slice,r.key,r.ordinal,JSON.stringify(r.payload))
+          return `($${n+1},$${n+2},$${n+3},$${n+4}::jsonb)`
+        })
+        await c.query(`INSERT INTO roster_candidate.record(slice,key,ordinal,payload) VALUES ${tuples.join(",")}`,params)
+      }
+      await c.query("UPDATE roster_candidate.meta SET initialized=true,revision=1 WHERE id=1")
+      const reconstructed=await readFrom(c,true)
+      if (!isDeepStrictEqual(reconstructed.state,state)) throw new Error("Private copy value parity failed")
+      await c.query(`WITH ranked AS (SELECT key,row_number() OVER(ORDER BY (payload->>'sentAt')::timestamptz DESC,ordinal,key) AS n FROM roster_candidate.record WHERE slice='notifications') UPDATE roster_candidate.record r SET archived=true FROM ranked v WHERE r.slice='notifications' AND r.key=v.key AND v.n>500`)
+      // Preserve source evidence independently of subsequent candidate edits.
+      await c.query("INSERT INTO roster_candidate.backup(id,payload) VALUES('initial-private-copy',$1)",[JSON.stringify(state)])
+      await c.query("INSERT INTO roster_candidate.change(actor,revision,changed) VALUES($1,1,$2)",[actor,next.length])
+      await c.query("COMMIT")
+      return {revision:"1",records:next.length,slices:Object.keys(state).length,parity:true}
+    } catch(e){await c.query("ROLLBACK");throw e} finally{c.release()}
+  }
+  return {read,write,initialize}
 }

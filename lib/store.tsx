@@ -336,6 +336,7 @@ export function StoreProvider({
   initialRole,
   authName,
   authEmail,
+  stateEndpoint = "/api/state",
 }: {
   children: ReactNode
   // The role of the signed-in account. Drives the whole permission system.
@@ -343,6 +344,7 @@ export function StoreProvider({
   // The signed-in account's identity, shown in the top bar.
   authName?: string
   authEmail?: string
+  stateEndpoint?: "/api/state" | "/api/admin/candidate-state"
 }) {
   const [currentRole, setCurrentRole] = useState<RoleCode>(initialRole ?? "Admin")
   const savedProgram = useBrowserStorage(ACTIVE_PROGRAM_KEY)
@@ -371,7 +373,7 @@ export function StoreProvider({
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (revisionRef.current) headers["If-Match"] = revisionRef.current
       // Serialize only the snapshot actually being sent, not superseded edits.
-      const res = await fetch("/api/state", { method: "PUT", headers, body: JSON.stringify(snapshot) })
+      const res = await fetch(stateEndpoint, { method: "PUT", headers, body: JSON.stringify(snapshot) })
       if (res.ok) {
         const body = (await res.json()) as { revision?: string | null }
         revisionRef.current = body.revision ?? res.headers.get("ETag") ?? revisionRef.current
@@ -394,7 +396,7 @@ export function StoreProvider({
       queue.stop()
       saveQueueRef.current = null
     }
-  }, [])
+  }, [stateEndpoint])
 
   const setActiveProgram = useCallback((p: ProgramView) => {
     setActiveProgramState(p)
@@ -501,7 +503,7 @@ export function StoreProvider({
     let cancelled = false
     ;(async () => {
       try {
-        const res = await fetch("/api/state", { cache: "no-store" })
+        const res = await fetch(stateEndpoint, { cache: "no-store" })
         const json = (await res.json()) as {
           state: Partial<PersistedState> | null
           revision?: string | null
@@ -737,7 +739,7 @@ export function StoreProvider({
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [stateEndpoint])
 
   // ── Durable snapshot: SAVE ───────��────────────────────────────────────────
   // Any change to any persisted slice schedules a debounced write of the WHOLE

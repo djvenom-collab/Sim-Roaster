@@ -19,7 +19,7 @@ const load = (path) => {
   const resolve = (name) => {
     if (name === "react/jsx-runtime") return jsx
     if (name === "react") return { Suspense: () => null }
-    if (name === "next/headers") return { headers: async () => headers }
+    if (name === "next/headers") return { headers: async () => headers, cookies: async () => ({get: () => undefined}) }
     if (name === "next/navigation") return { redirect: (path) => { throw Error(`REDIRECT:${path}`) } }
     if (name === "@/lib/auth") return { auth: { api: { getSession: async () => { authCalls++; return session } } } }
     if (name === "@/lib/store") return { StoreProvider: store }

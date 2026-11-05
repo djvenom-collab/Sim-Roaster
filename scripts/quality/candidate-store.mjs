@@ -14,7 +14,8 @@ try{
  const repo=candidateStore(pool)
  assert.equal((await repo.read()).state,null)
  const source={version:11,staff:[{id:'s',nested:{z:1,a:'value'}}],empty:[],settings:{key:{x:true}},notifications:Array.from({length:502},(_,i)=>({id:`n${i}`,staffId:'s',sentAt:new Date(Date.UTC(2026,10,5,0,0,i)).toISOString(),readAt:i===0?'read':null,attachments:[{id:'f',pathname:'synthetic/file'}]}))}
- assert.equal((await repo.write(source,'0','test')).revision,'1')
+ assert.equal((await repo.initialize(source,'test')).revision,'1')
+ await assert.rejects(()=>repo.initialize(source,'test'),/already initialized/)
  const active=await repo.read()
  assert.equal(active.state.notifications.length,500)
  const full=await repo.read(true)
