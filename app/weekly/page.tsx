@@ -46,7 +46,10 @@ export default function WeeklyPage() {
   const store = useStore()
   const [start, setStart] = useState(() => weekStart(TODAY))
   const [filters, setFilters] = useState<CalendarFilters>(emptyFilters)
-  const data = useCalendarData(filters)
+  const data = useCalendarData(filters, {
+    start: toISO(start),
+    end: toISO(addDays(start, 6)),
+  })
 
   // Keep the visible week inside the top-bar YEAR slicer: if navigation (or a
   // change to the slicer) pushes the week outside the range, snap it back to the
