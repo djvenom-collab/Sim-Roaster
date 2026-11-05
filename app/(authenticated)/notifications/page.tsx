@@ -33,6 +33,7 @@ type Filter = "all" | "unread" | "important"
 export default function MyNotificationsPage() {
   const {
     currentUser,
+    notificationsReady,
     notificationsForStaff,
     markNotificationRead,
     toggleNotificationFlag,
@@ -45,8 +46,8 @@ export default function MyNotificationsPage() {
 
   const staffId = currentUser.staffId
   const inbox = useMemo(
-    () => (staffId ? notificationsForStaff(staffId).filter((n) => !n.deletedAt) : []),
-    [staffId, notificationsForStaff],
+    () => (notificationsReady && staffId ? notificationsForStaff(staffId).filter((n) => !n.deletedAt) : []),
+    [notificationsReady, staffId, notificationsForStaff],
   )
 
   const counts = useMemo(
@@ -90,6 +91,10 @@ export default function MyNotificationsPage() {
     if (openId === pendingDelete.id) setOpenId(null)
     setPendingDelete(null)
     toast.success("Notification deleted")
+  }
+
+  if (!notificationsReady) {
+    return <div className="p-4 md:p-6"><PageHeader title="My Notifications" description="Notifications sent to you." /><p role="status" className="py-10 text-sm text-muted-foreground">Notifications are not loaded yet. If this persists, reload to retry.</p></div>
   }
 
   if (!staffId) {

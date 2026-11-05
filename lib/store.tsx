@@ -114,6 +114,7 @@ interface StoreState {
   currentRole: RoleCode
   setCurrentRole: (r: RoleCode) => void
   currentUser: User
+  notificationsReady: boolean
 
   // active program scope (RADAR / TOWER / ALL)
   activeProgram: ProgramView
@@ -352,6 +353,7 @@ export function StoreProvider({
   // with the seed during the initial load.
   const hydratedRef = useRef(false)
   const [hydrated, setHydrated] = useState(false)
+  const [notificationsReady, setNotificationsReady] = useState(false)
   // Only allow saving once we've SAFELY established the snapshot state (loaded an
   // existing one, or confirmed the store is empty). If the load errors, we stay
   // read-only for the session rather than risk clobbering good data on Blob.
@@ -725,6 +727,7 @@ export function StoreProvider({
         if (!cancelled) {
           hydratedRef.current = true
           setHydrated(true)
+          setNotificationsReady(canSaveRef.current)
         }
       }
     })()
@@ -2176,6 +2179,7 @@ export function StoreProvider({
     currentRole,
     setCurrentRole,
     currentUser,
+    notificationsReady,
     activeProgram,
     setActiveProgram,
     roles: seed.roles,
@@ -2319,7 +2323,7 @@ export function StoreProvider({
     markNotifiedMany,
     needsNotify,
   }), [
-    currentRole, currentUser, activeProgram, setActiveProgram, staffData, positionsData, simulatorsData, exercisesData,
+    currentRole, currentUser, notificationsReady, activeProgram, setActiveProgram, staffData, positionsData, simulatorsData, exercisesData,
     coursesData, courseById, addCourse, updateCourse, deleteCourse, courseSimClass, setCourseSimClass,
     exerciseQualRulesData, setExerciseQualRule,
     qualificationsData, staffQualificationsData, users,
