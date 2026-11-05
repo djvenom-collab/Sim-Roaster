@@ -278,7 +278,7 @@ interface StoreState {
   updateTrainingGroup: (g: TrainingGroup) => void
   deleteTrainingGroup: (id: string) => void
   log: (action: AuditAction, detail: string) => void
-  logImport: (summary: string) => void
+  logImport: (details: ImportDetails, summary: string) => void
   // notifications
   recordNotification: (n: Omit<NotificationRecord, "id" | "sentAt" | "sentBy">) => NotificationRecord
   // Bulk variant: records many notifications in ONE state update (one render).
@@ -317,6 +317,8 @@ export interface ArchiveYearSummary {
   tasks: number
   total: number
 }
+
+type ImportDetails = Pick<import("./types").ImportRecord, "filename" | "rowsTotal" | "rowsAccepted" | "rowsRejected">
 
 const StoreCtx = createContext<StoreState | null>(null)
 
@@ -1114,9 +1116,9 @@ export function StoreProvider({
     ])
   }, [])
 
-  const logImport = useCallback((summary: string) => {
+  const logImport = useCallback((details: ImportDetails, summary: string) => {
     setImportHistory((prev) => [
-      { summary, when: `${todayISO()} ${new Date().toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}` },
+      { ...details, id: `ih-${crypto.randomUUID()}`, date: new Date().toISOString(), user: currentUserRef.current.name },
       ...prev,
     ])
     log("excel.import", summary)

@@ -174,7 +174,7 @@ export function ExerciseEditorDialog({ open, onOpenChange, exercise }: Props) {
             <Label>Simulator</Label>
             <Select
               value={form.simulatorId ?? ""}
-              onValueChange={(v) => setForm((f) => ({ ...f, simulatorId: v }))}
+              onValueChange={(v) => { if (v !== null) setForm((f) => ({ ...f, simulatorId: v })) }}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select simulator">

@@ -123,7 +123,7 @@ export function RunEditorDialog({ open, onOpenChange, run, defaultDate }: Props)
             <Select
               value={form.slotTime}
               disabled={!editable}
-              onValueChange={(v) => setForm((f) => ({ ...f, slotTime: v }))}
+              onValueChange={(v) => { if (v !== null) setForm((f) => ({ ...f, slotTime: v })) }}
             >
               <SelectTrigger>
                 <SelectValue>
@@ -171,7 +171,7 @@ export function RunEditorDialog({ open, onOpenChange, run, defaultDate }: Props)
             <Select
               value={form.exerciseId}
               disabled={!editable}
-              onValueChange={(v) => setForm((f) => ({ ...f, exerciseId: v }))}
+              onValueChange={(v) => { if (v !== null) setForm((f) => ({ ...f, exerciseId: v })) }}
             >
               <SelectTrigger>
                 <SelectValue>

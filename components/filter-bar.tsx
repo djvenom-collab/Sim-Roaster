@@ -39,7 +39,7 @@ export function FilterBar({ filters, onChange, hide = [] }: Props) {
     options: { value: string; label: string }[],
   ) =>
     hide.includes(key) ? null : (
-      <Select value={filters[key]} onValueChange={(v) => set(key, v)}>
+      <Select value={filters[key]} onValueChange={(v) => { if (v !== null) set(key, v) }}>
         <SelectTrigger size="sm" className="h-8 w-auto min-w-[120px]">
           <SelectValue placeholder={label}>
             {(value) => {

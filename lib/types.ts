@@ -447,7 +447,7 @@ export interface AdminLog {
   ipAddress: string
 }
 
-export interface ImportHistory {
+export interface ImportRecord {
   id: string
   filename: string
   date: string
@@ -456,6 +456,10 @@ export interface ImportHistory {
   rowsAccepted: number
   rowsRejected: number
 }
+
+// Older snapshots stored only a display summary and timestamp. Keep those
+// readable; new imports use the structured record shared with seed/test data.
+export type ImportHistory = ImportRecord | { summary: string; when: string }
 
 // ── Notifications ────────────────────────�����──────────────────────────────
 // "in_app" = delivered to the recipient's in-app inbox (this prototype has no

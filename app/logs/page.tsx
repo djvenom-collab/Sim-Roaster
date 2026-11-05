@@ -123,14 +123,14 @@ function FaultLogTab({ logs }: { logs: FaultLog[] }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search system, description, reporter…" />
-        <Select value={severity} onValueChange={(v) => { setSeverity(v); setPage(1) }}>
+        <Select value={severity} onValueChange={(v) => { if (v !== null) { setSeverity(v); setPage(1) } }}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All severities</SelectItem>
             {["critical","major","minor","info"].map((s) => <SelectItem key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={status} onValueChange={(v) => { setStatus(v); setPage(1) }}>
+        <Select value={status} onValueChange={(v) => { if (v !== null) { setStatus(v); setPage(1) } }}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All statuses</SelectItem>
@@ -244,14 +244,14 @@ function OperatorLogTab({ logs }: { logs: OperatorLog[] }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search operator, entry…" />
-        <Select value={category} onValueChange={(v) => { setCategory(v); setPage(1) }}>
+        <Select value={category} onValueChange={(v) => { if (v !== null) { setCategory(v); setPage(1) } }}>
           <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All categories</SelectItem>
             {["briefing","run","handover","incident","maintenance","note"].map((c) => <SelectItem key={c} value={c}>{c.charAt(0).toUpperCase()+c.slice(1)}</SelectItem>)}
           </SelectContent>
         </Select>
-        <Select value={shift} onValueChange={(v) => { setShift(v); setPage(1) }}>
+        <Select value={shift} onValueChange={(v) => { if (v !== null) { setShift(v); setPage(1) } }}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All shifts</SelectItem>
@@ -312,7 +312,7 @@ function FirewallLogTab({ logs }: { logs: FirewallLog[] }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search IP, rule, description…" />
-        <Select value={action} onValueChange={(v) => { setAction(v); setPage(1) }}>
+        <Select value={action} onValueChange={(v) => { if (v !== null) { setAction(v); setPage(1) } }}>
           <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All actions</SelectItem>
@@ -379,7 +379,7 @@ function AdminLogTab({ logs }: { logs: AdminLog[] }) {
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <SearchBar value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search user, detail, IP…" />
-        <Select value={action} onValueChange={(v) => { setAction(v); setPage(1) }}>
+        <Select value={action} onValueChange={(v) => { if (v !== null) { setAction(v); setPage(1) } }}>
           <SelectTrigger className="w-44"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">All actions</SelectItem>

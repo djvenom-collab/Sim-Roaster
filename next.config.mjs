@@ -28,9 +28,6 @@ const nextConfig = {
   // client JS bundles are blocked and the app never becomes interactive.
   allowedDevOrigins: ["*.vusercontent.net"],
   poweredByHeader: false,
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   images: {
     unoptimized: true,
   },
