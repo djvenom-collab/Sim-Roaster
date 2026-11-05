@@ -154,7 +154,7 @@ export async function authorize(request: Request, options: AuthorizeOptions = {}
   // Entire candidate branch is write-isolated, even before opt-in and in old tabs.
   if (process.env.VERCEL_ENV === "preview" && process.env.VERCEL_GIT_COMMIT_REF === "storage/migration-candidate") {
     const path = new URL(request.url).pathname
-    const allowed = ["/api/admin/candidate-state", "/api/admin/candidate-session", "/api/admin/candidate-recovery", "/api/admin/migration-copy", "/api/admin/migration-rehearsal"]
+    const allowed = ["/api/admin/candidate-state", "/api/admin/candidate-session", "/api/admin/candidate-recovery", "/api/admin/migration-copy", "/api/admin/migration-rehearsal", "/api/admin/candidate-source-check"]
     if (UNSAFE_METHODS.has(request.method.toUpperCase()) && !allowed.includes(path)) return { ok:false, response:jsonError(409,"isolated_rehearsal_action_blocked") }
   }
 

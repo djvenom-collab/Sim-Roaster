@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { CandidateArchive } from "@/components/candidate-archive"
 import { Button } from "@/components/ui/button"
 
 export function MigrationRehearsalPanel() {
@@ -25,11 +26,13 @@ export function MigrationRehearsalPanel() {
       <Button disabled={busy} onClick={()=>action("/api/admin/migration-copy")}>Copy private roster into isolated database</Button>
       <Button disabled={busy} onClick={()=>action("/api/admin/candidate-session?action=enter",true)}>Open isolated roster copy</Button>
       <Button disabled={busy} onClick={()=>action("/api/admin/candidate-session?action=exit",true)}>Leave isolated copy</Button>
+      <Button disabled={busy} onClick={()=>action("/api/admin/candidate-source-check")}>Check source integrity without writing</Button>
       <Button disabled={busy} onClick={()=>setConfirmRecovery(true)}>Test isolated backup recovery</Button>
     </div>
     {confirmRecovery&&<div className="space-y-3 rounded border p-4"><p>Restore only the test database to its initial private copy? Current test data will be retained in a candidate backup. Production is not changed.</p><Button disabled={busy} onClick={()=>action("/api/admin/candidate-recovery")}>Confirm isolated recovery</Button><Button disabled={busy} onClick={()=>setConfirmRecovery(false)}>Cancel recovery</Button></div>}
     {busy&&<p role="status">Working on the isolated database…</p>}
     <p>Private copy is one-time and rejects an initialized target. Complete source values are compared before commit; only aggregate results are shown.</p>
+    <CandidateArchive />
     {result&&<pre className="overflow-auto rounded border p-4" role="status">{result}</pre>}
   </section>
 }

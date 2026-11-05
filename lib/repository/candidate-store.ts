@@ -180,5 +180,36 @@ export function candidateStore(pool: Pool) {
       return {revision,parity:true,previousCandidatePreserved:true,records:next.length}
     }catch(e){await c.query("ROLLBACK");throw e}finally{c.release()}
   }
-  return {read,write,initialize,restoreInitial}
+  async function page(options: {slice:string; archived?:boolean; limit?:number; after?:string; expected?:string}) {
+    const {slice,archived=false,limit=25,after="",expected}=options
+    if (!slice || slice.length>100 || after.length>512 || !Number.isInteger(limit) || limit<1 || limit>100) throw new CandidateInvalidState("Invalid page")
+    const c=await pool.connect()
+    try {
+      await c.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY")
+      const meta=(await c.query("SELECT revision,initialized FROM roster_candidate.meta WHERE id=1")).rows[0]
+      if(!meta?.initialized)throw new CandidateInvalidState("Copy required")
+      const revision=String(meta.revision)
+      if(expected && expected!==revision)throw new CandidateConflict()
+      const rows=(await c.query("SELECT key,payload FROM roster_candidate.record WHERE slice=$1 AND archived=$2 AND key>$3 ORDER BY key LIMIT $4",[slice,archived,after,limit+1])).rows
+      const total=(await c.query("SELECT count(*)::int AS n FROM roster_candidate.record WHERE slice=$1 AND archived=$2",[slice,archived])).rows[0].n
+      const records=rows.slice(0,limit)
+      await c.query("COMMIT")
+      return {records,total,revision,next:rows.length>limit?String(records.at(-1)?.key):null}
+    }catch(e){await c.query("ROLLBACK");throw e}finally{c.release()}
+  }
+  async function compareSource(source: CandidateSnapshot) {
+    const result=await pool.query("SELECT payload FROM roster_candidate.backup WHERE id='initial-private-copy'")
+    if(!result.rows.length)throw new CandidateInvalidState("Copy required")
+    const initial=result.rows[0].payload as CandidateSnapshot
+    const before=new Map(records(initial).map(r=>[JSON.stringify([r.slice,r.key]),r]))
+    const after=new Map(records(source).map(r=>[JSON.stringify([r.slice,r.key]),r]))
+    let added=0,removed=0,modified=0
+    for(const [key,row] of after){const old=before.get(key);if(!old)added++;else if(!isDeepStrictEqual(old.payload,row.payload)||old.ordinal!==row.ordinal)modified++}
+    for(const key of before.keys())if(!after.has(key))removed++
+    const markers=new Set(["Isolated test rank","Isolated persistence check"])
+    const sourceStaff=Array.isArray(source.staff)?source.staff:[]
+    const testMarkersFound=sourceStaff.filter(row=>row && typeof row==="object" && "rank" in row && markers.has(String(row.rank))).length
+    return {matchesInitialCopy:isDeepStrictEqual(initial,source),added,removed,modified,testMarkersFound,sourceChangedByCheck:false}
+  }
+  return {read,write,initialize,restoreInitial,page,compareSource}
 }

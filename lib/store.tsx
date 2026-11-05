@@ -1,4 +1,5 @@
 "use client"
+import { sliceFingerprints, changedSlices } from "./slice-diff"
 
 /* ===========================================================================
  * STORE — the app's central "brain" (all live data + every action)
@@ -368,6 +369,7 @@ export function StoreProvider({
   // Revision (ETag) of the snapshot this session last read or wrote. Sent as
   // If-Match so a save never silently overwrites another session's changes.
   const revisionRef = useRef<string | null>(null)
+  const sliceBaselineRef = useRef<Map<string,string | undefined>>(new Map())
 
   const saveQueueRef = useRef<ReturnType<typeof createLatestSaveQueue<PersistedState>> | null>(null)
   useEffect(() => {
@@ -375,11 +377,15 @@ export function StoreProvider({
       if (readOnly || !canSaveRef.current) return false
       const headers: Record<string, string> = { "Content-Type": "application/json" }
       if (revisionRef.current) headers["If-Match"] = revisionRef.current
-      // Serialize only the snapshot actually being sent, not superseded edits.
-      const res = await fetch(stateEndpoint, { method: "PUT", headers, body: JSON.stringify(snapshot) })
+      // Candidate saves transfer only changed domains, not the whole history.
+      // The repository treats omitted domains as unchanged under the same CAS.
+      const delta = stateEndpoint !== "/api/state" ? changedSlices(snapshot as unknown as Record<string,unknown>,sliceBaselineRef.current) : null
+      if (delta && Object.keys(delta.patch).length===0) return true
+      const res = await fetch(stateEndpoint, { method: "PUT", headers, body: JSON.stringify(delta?.patch ?? snapshot) })
       if (res.ok) {
         const body = (await res.json()) as { revision?: string | null }
         revisionRef.current = body.revision ?? res.headers.get("ETag") ?? revisionRef.current
+        if (delta) sliceBaselineRef.current = delta.fingerprints
         return true
       }
       canSaveRef.current = false
@@ -515,6 +521,7 @@ export function StoreProvider({
         if (cancelled) return
         revisionRef.current = json?.revision ?? null
         const snap = json?.state
+        if (stateEndpoint !== "/api/state" && snap) sliceBaselineRef.current = sliceFingerprints(snap as Record<string,unknown>)
         if (snap && ((snap as { __autonoma?: boolean }).__autonoma === true || (stateEndpoint !== "/api/state" && (snap as { __candidate?: boolean }).__candidate === true))) {
           // ── AUTONOMA test-run snapshot ────────────────────────────────────
           // An isolated per-run snapshot (lib/autonoma/run-store.ts). Apply it
