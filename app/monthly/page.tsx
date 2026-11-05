@@ -40,7 +40,13 @@ export default function MonthlyPage() {
   const store = useStore()
   const [cursor, setCursor] = useState(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1))
   const [filters, setFilters] = useState<CalendarFilters>(emptyFilters)
-  const data = useCalendarData(filters)
+  const year = cursor.getFullYear()
+  const month = cursor.getMonth()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const data = useCalendarData(filters, {
+    start: toISO(new Date(year, month, 1)),
+    end: toISO(new Date(year, month, daysInMonth)),
+  })
 
   // Keep the visible month inside the top-bar YEAR slicer (and re-clamp if the
   // slicer changes or navigation steps past a boundary).
@@ -50,10 +56,7 @@ export default function MonthlyPage() {
     if (cy !== y) setCursor(new Date(cy, cursor.getMonth(), 1))
   }, [cursor, store.yearRange])
 
-  const year = cursor.getFullYear()
-  const month = cursor.getMonth()
   const startOffset = (new Date(year, month, 1).getDay() + 6) % 7
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
   const cells: (number | null)[] = [
     ...Array(startOffset).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),

@@ -48,8 +48,17 @@ export const emptyFilters: CalendarFilters = {
   trainingType: "all",
 }
 
-export function useCalendarData(filters: CalendarFilters) {
-  const store = useStore()
+// Calendar views pass their inclusive visible range; callers that omit it retain
+// the full-history behavior. Memoize by the inputs used here, not the entire
+// store, so a notification or log update doesn't rebuild the calendar summary.
+export function useCalendarData(filters: CalendarFilters, range?: { start: string; end: string }) {
+  const {
+    scopedRuns, assignmentsForRun, scopedTrainingSessions,
+    trainingAttendance, scopedLeaveRecords, publicHolidays,
+  } = useStore()
+  const { staffId, positionId, simulatorId, exerciseId, status, trainingType } = filters
+  const start = range?.start
+  const end = range?.end
 
   return useMemo(() => {
     const map = new Map<string, DayData>()
@@ -58,41 +67,50 @@ export function useCalendarData(filters: CalendarFilters) {
       return map.get(date)!
     }
 
+    const visible = (date: string) => (!start || date >= start) && (!end || date <= end)
+
     // filter runs (scoped to the active program first)
-    const runs = store.scopedRuns.filter((r) => {
-      if (filters.simulatorId !== "all" && r.simulatorId !== filters.simulatorId) return false
-      if (filters.exerciseId !== "all" && r.exerciseId !== filters.exerciseId) return false
-      if (filters.status !== "all" && r.status !== filters.status) return false
-      if (filters.positionId !== "all" && !r.requiredPositions.includes(filters.positionId)) return false
-      if (filters.staffId !== "all") {
-        const asgs = store.assignmentsForRun(r.id)
-        if (!asgs.some((a) => a.staffId === filters.staffId)) return false
+    const runs = scopedRuns.filter((r) => {
+      if (!visible(r.date)) return false
+      if (simulatorId !== "all" && r.simulatorId !== simulatorId) return false
+      if (exerciseId !== "all" && r.exerciseId !== exerciseId) return false
+      if (status !== "all" && r.status !== status) return false
+      if (positionId !== "all" && !r.requiredPositions.includes(positionId)) return false
+      if (staffId !== "all") {
+        const asgs = assignmentsForRun(r.id)
+        if (!asgs.some((a) => a.staffId === staffId)) return false
       }
       return true
     })
     runs.forEach((r) => ensure(r.date).runs.push(r))
 
     // training (scoped to the active program)
-    store.scopedTrainingSessions.forEach((t) => {
-      if (filters.trainingType !== "all" && t.type !== filters.trainingType) return
-      if (filters.staffId !== "all") {
-        const attending = store.trainingAttendance.some(
-          (a) => a.sessionId === t.id && a.staffId === filters.staffId,
+    scopedTrainingSessions.forEach((t) => {
+      if (!visible(t.date)) return
+      if (trainingType !== "all" && t.type !== trainingType) return
+      if (staffId !== "all") {
+        const attending = trainingAttendance.some(
+          (a) => a.sessionId === t.id && a.staffId === staffId,
         )
-        if (t.instructorId !== filters.staffId && !attending) return
+        if (t.instructorId !== staffId && !attending) return
       }
       ensure(t.date).trainingCount++
     })
 
     // leave (scoped to the active program via staff membership)
-    store.scopedLeaveRecords.forEach((l) => {
+    scopedLeaveRecords.forEach((l) => {
       if (l.approval === "rejected") return
-      if (filters.staffId !== "all" && l.staffId !== filters.staffId) return
+      if (staffId !== "all" && l.staffId !== staffId) return
       // Iterate days with a safe, timezone-independent helper. Guard against
       // malformed ranges so a bad record can never hang the calendar.
-      let d = l.startDate
+      if ((start && l.endDate < start) || (end && l.startDate > end)) return
+      // Expand only visible days, but retain the old 366-day cap measured from
+      // the original start (not the clipped start) for malformed long records.
+      const cappedEnd = addDaysISO(l.startDate, 365)
+      const last = [l.endDate, cappedEnd, end].filter((d): d is string => !!d).sort()[0]
+      let d = start && l.startDate < start ? start : l.startDate
       let guard = 0
-      while (d <= l.endDate && guard < 366) {
+      while (d <= last && guard < 366) {
         ensure(d).leaveCount++
         d = addDaysISO(d, 1)
         guard++
@@ -100,10 +118,15 @@ export function useCalendarData(filters: CalendarFilters) {
     })
 
     // holidays
-    store.publicHolidays.forEach((h) => {
+    publicHolidays.forEach((h) => {
+      if (!visible(h.date)) return
       ensure(h.date).holiday = h.name
     })
 
     return map
-  }, [store, filters])
+  }, [
+    scopedRuns, assignmentsForRun, scopedTrainingSessions, trainingAttendance,
+    scopedLeaveRecords, publicHolidays,
+    staffId, positionId, simulatorId, exerciseId, status, trainingType, start, end,
+  ])
 }

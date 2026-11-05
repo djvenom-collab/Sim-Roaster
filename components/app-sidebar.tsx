@@ -38,8 +38,9 @@ import {
   ScrollText,
   DatabaseBackup,
   Activity,
+  LoaderCircle,
 } from "lucide-react"
-import Link from "next/link"
+import Link, { useLinkStatus } from "next/link"
 import { usePathname } from "next/navigation"
 import {
   Sidebar,
@@ -104,6 +105,18 @@ const settings: NavItem[] = [
   { title: "System Monitor", href: "/monitor", icon: Activity, perm: "page_monitor" },
 ]
 
+// A route fallback cannot cover a pending root-layout session check. Keep a
+// fixed-size hint inside each Link so even that wait has feedback without a
+// layout shift. Next resets pending automatically on completion/cancellation.
+function NavigationPending() {
+  const { pending } = useLinkStatus()
+  return (
+    <span className="ml-auto size-4 shrink-0" role="status" aria-label={pending ? "Opening page" : undefined}>
+      {pending && <LoaderCircle aria-hidden="true" className="size-4 motion-safe:animate-spin" />}
+    </span>
+  )
+}
+
 function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
   const pathname = usePathname()
   const { currentRole } = useStore()
@@ -125,6 +138,7 @@ function NavGroup({ label, items }: { label: string; items: NavItem[] }) {
                     <Link href={item.href}>
                       <item.icon className="size-4" />
                       <span>{item.title}</span>
+                      <NavigationPending />
                     </Link>
                   }
                 />
